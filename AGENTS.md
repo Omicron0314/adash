@@ -20,7 +20,7 @@ M3 Expressive 视觉来自 [neko.html](docs/design/neko.html)）：
 | **连接主机**（分组） | 从「云资源」打开的主机会话（终端/文件/监控），以及身份、片段、端口转发 | 会话随主机出现，不抢首屏 |
 
 三个产品页共用同一份领域数据：代理、概览卡片和流程图看到的资源必须是同一批。
-「连接主机」分组是 catussh 能力的保留位置：会话外壳已经可用，SSH 传输在 M6 落地。
+「主机会话」保留 catussh 的终端、文件、监控、身份、片段和端口转发能力；导航不显示分组标题。
 
 产品原则，冲突时按顺序取舍：
 
@@ -38,8 +38,10 @@ Rust workspace，GPUI 桌面应用，Material 3 Expressive 组件来自
 | `crates/ucloud-api` | Rust | **唯一的** UCloud OpenAPI 客户端：签名、传输、类型化响应、Mock 后端 |
 | `crates/adash-core` | Rust | 领域层：统一资源模型、项目、流程（Flow）、预算/花费、计划(Plan)、执行器、本地状态 |
 | `crates/adash-tool` | Rust（bin） | 给 pi 扩展调用的 JSON CLI，代理**唯一的**执行面 |
-| `crates/pi-rpc` | Rust | `pi --mode rpc` 子进程客户端（JSONL over stdio、事件流、extension UI） |
-| `crates/adash-app` | Rust（bin） | GPUI 应用：外壳/路由、三个页面、M3 组件组合 |
+| `crates/agent-sdk` | Rust | 内置 pi SDK 宿主的 JSONL 边界（启动、命令、事件、确认） |
+| `agent/runtime` | TypeScript | 嵌入 `createAgentSession` 的 SDK 宿主；模型、会话、工具、确认 |
+| `crates/adash-ssh` | Rust | SSH/SFTP/PTY/监控/转发传输层，独立于 GUI |
+| `crates/adash-app` | Rust（bin） | GPUI 应用：外壳/路由、产品页、主机与设置、M3 组件组合 |
 | `agent/extensions/ucloud` | TypeScript | pi 扩展：注册 `ucloud_*` 工具，内部只调 `adash-tool` |
 | `agent/skills/*` | Markdown | 资源盘点、成本优化、流程图生成等领域知识（按需加载） |
 | `agent/prompts/system.md` | Markdown | 追加给 pi 的系统提示（角色、流程、禁区） |
@@ -52,9 +54,10 @@ Rust workspace，GPUI 桌面应用，Material 3 Expressive 组件来自
 
 - **UCloud API 只在 `ucloud-api` 里实现一次。** GUI 直接链接它；代理通过 `adash-tool` 间接使用它。
   TS 扩展里**禁止**直接请求 UCloud API，也禁止实现签名逻辑。
-- **GUI 不嵌入 Node。** 代理是 `pi --mode rpc` 子进程，GUI 只通过 `pi-rpc` 与之通信。
-- **pi 以受限模式启动**：`--no-builtin-tools`（没有 bash/edit/write），只加载本仓库的扩展、skill 与提示，
-  会话存在应用数据目录。代理能做的事 = `ucloud_*` 工具能做的事。
+- **代理复用 pi SDK。** 应用自带 Node SDK host（`agent/runtime`），调用 `createAgentSession` 管理会话、模型、工具与确认；
+  Rust 通过 `agent-sdk` 的 JSONL 边界与它通信，不启动、也不连接外部 `pi` CLI 或已有 pi 会话。
+- **SDK 使用显式工具白名单**：`noExtensions`/`noSkills`/`noContextFiles` 关掉标准发现，只加载本仓库的
+  `ucloud_*` 工具与 skill；没有 bash/edit/write。会话存在应用数据目录，凭证不进入模型上下文。
 - **三个页面共享 `adash-core` 的类型**，不允许各页面自己解析 UCloud JSON。
 
 ## 3. 安全与花钱规则（硬性）
@@ -121,6 +124,10 @@ Linux 构建 GPUI 需要 `libxkbcommon wayland vulkan-icd-loader libx11 libxcb f
 
 - 按 [docs/ROADMAP.md](docs/ROADMAP.md) 的里程碑推进：开始前把状态改为进行中，完成后勾选，
   并写清验收证据（命令输出、截图路径）。
+- **每次修改完成后，必须执行 `python3 scripts/build-desktop.py`**：构建 `adash-app` 与 `adash-tool`，
+  生成 `target/desktop/adash.desktop`（遵循实际 Cargo target 目录），并更新当前用户的
+  `~/.local/share/applications/adash.desktop`（遵循 `XDG_DATA_HOME`）。用户需要直接从启动器打开最新版本。
+  入口默认 Mock，使用正常 pi 配置；不得把截图用的离线/开场提问环境写进日常启动入口。
 - 小步原子提交，提交信息说明「改了什么 + 为什么」；一个提交只做一件事；在 `main` 上工作，不 force-push。
 - 合并前必须通过第 6 节的 fmt / clippy / test；UI 改动附截图到 `docs/screenshots/`。
 - 不确定 UCloud 接口字段时以官方文档 <https://docs.ucloud.cn/api> 为准，注释里写接口名与文档链接；

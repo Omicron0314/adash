@@ -69,7 +69,7 @@ pub fn analyze(inventory: &Inventory) -> Vec<Finding> {
                 resource,
                 Severity::Waste,
                 Verb::Release,
-                format!("未挂载到任何主机，占用 {}GiB", resource.spec),
+                format!("未挂载到任何主机（{}）", resource.spec),
             ));
         }
     }

@@ -74,7 +74,14 @@ function result(envelope: ToolEnvelope, summary?: string, extra?: Record<string,
 const READ = { readOnlyHint: true, destructiveHint: false, openWorldHint: true };
 const PLAN = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 
-function readTool(name: string, command: string, description: string, parameters: object) {
+/** Commands whose CLI contract takes positional arguments instead of stdin only. */
+function readTool(
+  name: string,
+  command: string,
+  description: string,
+  parameters: object,
+  positional?: (params: Record<string, string>) => string[],
+) {
   return defineTool({
     name,
     label: name,
@@ -82,7 +89,8 @@ function readTool(name: string, command: string, description: string, parameters
     parameters: parameters as never,
     annotations: READ,
     async execute(_id: string, params: unknown, signal?: AbortSignal) {
-      const envelope = await runTool(command, params, [], signal);
+      const args = positional?.(params as Record<string, string>) ?? [];
+      const envelope = await runTool(command, params, args, signal);
       return result(envelope);
     },
   });
@@ -131,6 +139,7 @@ export default function (pi: ExtensionAPI) {
       Type.Object({
         id: Type.String({ description: "资源 id，形如 uhost:uhost-shopweb1" }),
       }),
+      (params) => [params.id],
     ),
   );
   pi.registerTool(
@@ -153,6 +162,7 @@ export default function (pi: ExtensionAPI) {
       "flow",
       "查看某个项目的完整流程图：节点、连线及其证据、执行记录。用户问「这个项目用了哪些服务」时用它。",
       Type.Object({ project: Type.String({ description: "项目 slug，例如 shop-api" }) }),
+      (params) => [params.project],
     ),
   );
 

@@ -83,7 +83,10 @@ impl Adash {
         let mut list = div()
             .id("resource-scroll")
             .flex()
-            .flex_col()
+            .flex_row()
+            .flex_wrap()
+            .items_start()
+            .gap(rem(16.))
             .flex_1()
             .min_h_0()
             .overflow_y_scroll();
@@ -101,11 +104,19 @@ impl Adash {
                 div()
                     .id(SharedString::from(format!("row-{}", resource.id.key())))
                     .flex()
-                    .items_center()
-                    .gap(rem(10.))
-                    .px(rem(12.))
-                    .py(rem(9.))
-                    .rounded(rem(12.))
+                    .flex_col()
+                    .items_start()
+                    .w(relative(0.48))
+                    .gap(rem(16.))
+                    .p(rem(20.))
+                    .rounded(rem(24.))
+                    .bg(color(ColorRole::SURFACE_CONTAINER_LOWEST))
+                    .border_1()
+                    .border_color(color(if selected {
+                        ColorRole::PRIMARY
+                    } else {
+                        ColorRole::SURFACE_CONTAINER_LOWEST
+                    }))
                     .cursor_pointer()
                     .when(selected, |this| {
                         this.bg(color(ColorRole::SECONDARY_CONTAINER))
@@ -117,7 +128,14 @@ impl Adash {
                         this.selected = Some(target.clone());
                         cx.notify();
                     }))
-                    .child(widgets::state_dot(resource.state))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(rem(10.))
+                            .child(widgets::resource_icon(resource.id.kind))
+                            .child(widgets::state_pill(resource.state)),
+                    )
                     .child(
                         div()
                             .flex()
@@ -154,19 +172,19 @@ impl Adash {
                     )
                     .child(
                         div()
-                            .w(rem(72.))
-                            .text_size(TEXT_AUX)
-                            .child(money(resource.monthly_cost_cents)),
-                    )
-                    .child(widgets::state_pill(resource.state)),
+                            .text_size(rem(18.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(money(resource.monthly_cost_cents) + " / 月"),
+                    ),
             );
         }
 
         let mut column = div()
             .flex()
             .flex_col()
-            .gap(rem(10.))
+            .gap(rem(16.))
             .flex_1()
+            .min_h_0()
             .min_w_0()
             .child(
                 div()
@@ -175,7 +193,7 @@ impl Adash {
                     .gap(rem(12.))
                     .child(
                         div()
-                            .text_size(TEXT_TITLE)
+                            .text_size(rem(40.))
                             .font_weight(FontWeight::SEMIBOLD)
                             .child(i18n::nav::RESOURCES),
                     )
@@ -191,11 +209,11 @@ impl Adash {
                             )),
                     )
                     .child(div().flex_1())
-                    .child(
-                        div()
-                            .w(px(260.))
-                            .child(TextField::new("resource-search", &self.search)),
-                    ),
+                    .child(div().w(px(260.)).child(widgets::rounded_input(
+                        "resource-search",
+                        &self.search,
+                        Some("搜索"),
+                    ))),
             )
             .child(widgets::chip_row(chips))
             .child(widgets::chip_row(region_chips));
@@ -276,7 +294,11 @@ impl Adash {
         if let Some(ip) = &resource.private_ip {
             rows = rows.child(widgets::kv_row("内网 IP", ip.clone()));
         }
+        // IPs are rendered above; the attribute map repeats them for the agent.
         for (key, value) in &resource.attributes {
+            if matches!(key.as_str(), "公网 IP" | "内网 IP") {
+                continue;
+            }
             rows = rows.child(widgets::kv_row(key.clone(), value.clone()));
         }
         if !resource.attached_to.is_empty() {
@@ -294,13 +316,17 @@ impl Adash {
         let host = resource.id.kind == ResourceKind::UHost;
         let target = resource.clone();
 
-        MaterialCard::new("resource-detail", CardVariant::Filled)
+        CardSurface::new(CardVariant::Filled)
+            .id("resource-detail")
+            .bg(color(ColorRole::SURFACE_CONTAINER_LOWEST))
+            .rounded(rem(24.))
             .flex()
             .flex_col()
             .gap(rem(8.))
             .p(rem(16.))
             .w(px(340.))
             .flex_shrink_0()
+            .self_start()
             .child(
                 div()
                     .flex()
@@ -349,8 +375,8 @@ impl Adash {
                         widgets::filled_button(
                             "detail-terminal",
                             action::OPEN_TERMINAL,
-                            cx.listener(move |this, _, _, cx| {
-                                this.open_session(&resource, cx);
+                            cx.listener(move |this, _, window, cx| {
+                                this.open_session(&resource, window, cx);
                             }),
                         )
                     })),

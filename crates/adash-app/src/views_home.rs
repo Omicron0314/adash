@@ -12,24 +12,40 @@ use gpui_kit_material::prelude::*;
 impl Adash {
     /// Conversation + overview.
     pub fn render_home(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        // Below 1180 the overview stacks under the conversation (docs/UI.md §4).
+        let narrow = window.bounds().size.width < px(1280.);
+        let chat = self.render_chat(window, cx);
+        let overview = div()
+            .id("overview-scroll")
+            .overflow_y_scroll()
+            .h_full()
+            .flex()
+            .flex_col()
+            .gap(rem(10.))
+            .map(|this| {
+                if narrow {
+                    this.w(px(300.)).flex_shrink_0()
+                } else {
+                    this.w(px(344.)).flex_shrink_0()
+                }
+            })
+            .child(self.render_overview(window, cx));
+
         div()
             .flex()
-            .gap(rem(16.))
+            .flex_row()
+            .gap(rem(12.))
             .size_full()
-            .child(self.render_chat(window, cx))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .w(px(340.))
-                    .flex_shrink_0()
-                    .gap(rem(10.))
-                    .child(self.render_overview(window, cx)),
-            )
+            .child(chat)
+            .child(overview)
             .into_any_element()
     }
 
     fn render_chat(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let has_conversation = self
+            .messages
+            .iter()
+            .any(|message| message.role == Role::User);
         let mut messages = div()
             .id("chat-scroll")
             .flex()
@@ -41,6 +57,9 @@ impl Adash {
             .overflow_y_scroll();
 
         for (index, message) in self.messages.iter().enumerate() {
+            if index == 0 && has_conversation {
+                continue;
+            }
             messages = messages.child(match message.role {
                 Role::User => div()
                     .flex()
@@ -107,7 +126,11 @@ impl Adash {
             .flex_col()
             .flex_1()
             .min_w_0()
-            .gap(rem(10.))
+            .h_full()
+            .p(rem(28.))
+            .rounded(rem(28.))
+            .bg(color(ColorRole::SURFACE_CONTAINER_LOW))
+            .gap(rem(18.))
             .child(
                 div()
                     .flex()
@@ -127,25 +150,86 @@ impl Adash {
                             .child(status.clone())
                     })),
             )
+            .children((!has_conversation).then(|| {
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(rem(8.))
+                    .pb(rem(12.))
+                    .child(
+                        div()
+                            .text_size(rem(14.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(color(ColorRole::PRIMARY))
+                            .child(i18n::home::EYEBROW),
+                    )
+                    .child(
+                        div()
+                            .text_size(rem(48.))
+                            .font_weight(FontWeight::BOLD)
+                            .child(i18n::home::TITLE),
+                    )
+                    .child(
+                        div()
+                            .text_size(rem(16.))
+                            .text_color(color(ColorRole::ON_SURFACE_VARIANT))
+                            .child(i18n::home::SUBTITLE),
+                    )
+            }))
+            .child(
+                div()
+                    .flex()
+                    .gap(rem(8.))
+                    .flex_wrap()
+                    .child(widgets::tonal_button(
+                        "ask-resources",
+                        i18n::home::INVENTORY,
+                        cx.listener(|this, _, _, cx| {
+                            this.ask(i18n::home::INVENTORY_QUESTION.to_owned(), cx);
+                        }),
+                    ))
+                    .child(widgets::tonal_button(
+                        "ask-cost",
+                        i18n::home::SAVINGS,
+                        cx.listener(|this, _, _, cx| {
+                            this.ask(i18n::home::SAVINGS_QUESTION.to_owned(), cx);
+                        }),
+                    ))
+                    .child(widgets::text_button(
+                        "show-project-flow",
+                        i18n::home::FLOW,
+                        cx.listener(|this, _, _, cx| {
+                            this.page = Page::Flows;
+                            cx.notify();
+                        }),
+                    )),
+            )
             .child(messages)
             .child(self.render_composer(window, cx));
 
         column.into_any_element()
     }
 
+    /// One M3 rounded composer: the Kit input paints only text inside a
+    /// 28px-radius field, and Enter sends (Shift+Enter is a newline once the
+    /// field becomes multi-line).
     fn render_composer(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         div()
             .flex()
             .items_center()
-            .gap(rem(8.))
-            .p(rem(8.))
-            .rounded(rem(20.))
+            .gap(rem(12.))
+            .h(px(56.))
+            .pl(rem(20.))
+            .pr(rem(8.))
+            .rounded(rem(28.))
             .bg(color(ColorRole::SURFACE_CONTAINER_HIGH))
             .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .child(TextField::new("chat-input", &self.input)),
+                div().flex_1().min_w_0().child(
+                    gpui_kit::component::input::Input::new(&self.input)
+                        .appearance(false)
+                        .p_0()
+                        .text_size(rem(16.)),
+                ),
             )
             .child(
                 MaterialButton::new("chat-send")
@@ -191,9 +275,15 @@ impl Adash {
                     )
                     .child(
                         div()
+                            .w(rem(72.))
+                            .flex_shrink_0()
                             .text_size(TEXT_AUX)
-                            .text_color(color(ColorRole::ON_SURFACE_VARIANT))
-                            .child(money(action.monthly_cents)),
+                            .text_color(color(if action.monthly_cents < 0 {
+                                ColorRole::TERTIARY
+                            } else {
+                                ColorRole::ON_SURFACE_VARIANT
+                            }))
+                            .child(adash_core::plan::signed_money(action.monthly_cents)),
                     ),
             );
         }
@@ -212,12 +302,17 @@ impl Adash {
             );
         }
 
-        MaterialCard::new("plan-card", CardVariant::Elevated)
+        CardSurface::new(CardVariant::Elevated)
+            .id("plan-card")
+            .bg(color(ColorRole::SURFACE_CONTAINER_LOWEST))
+            .rounded(rem(24.))
             .flex()
             .flex_col()
             .gap(rem(8.))
             .p(rem(16.))
-            .max_w(rem(560.))
+            .w(rem(520.))
+            .flex_shrink_0()
+            .overflow_hidden()
             .child(
                 div()
                     .flex()
@@ -373,7 +468,7 @@ impl Adash {
                 "ov-balance",
                 overview::BALANCE,
                 balance,
-                Some(monthly),
+                Some(format!("当前资源估算 {monthly} / 月")),
             ))
             .child(widgets::stat_card(
                 "ov-spend",
@@ -396,7 +491,10 @@ impl Adash {
                 )),
             ))
             .child(
-                MaterialCard::new("ov-budget", CardVariant::Filled)
+                CardSurface::new(CardVariant::Filled)
+                    .id("ov-budget")
+                    .bg(color(ColorRole::SECONDARY_CONTAINER))
+                    .rounded(rem(24.))
                     .flex()
                     .flex_col()
                     .gap(rem(8.))
@@ -430,10 +528,22 @@ impl Adash {
                         ratio.min(1.0),
                         window,
                         cx,
-                    )),
+                    ))
+                    .children((budget_limit > 0 && ratio >= 1.0).then(|| {
+                        div()
+                            .text_size(TEXT_AUX)
+                            .text_color(color(ColorRole::ERROR))
+                            .child(format!(
+                                "已超出预算 {}",
+                                money((budget_spent - budget_limit).max(0))
+                            ))
+                    })),
             )
             .child(
-                MaterialCard::new("ov-counts", CardVariant::Filled)
+                CardSurface::new(CardVariant::Filled)
+                    .id("ov-counts")
+                    .bg(color(ColorRole::SURFACE_CONTAINER_LOWEST))
+                    .rounded(rem(24.))
                     .flex()
                     .flex_col()
                     .gap(px(2.))
@@ -450,7 +560,10 @@ impl Adash {
                     .child(count_rows),
             )
             .child(
-                MaterialCard::new("ov-findings", CardVariant::Filled)
+                CardSurface::new(CardVariant::Filled)
+                    .id("ov-findings")
+                    .bg(color(ColorRole::TERTIARY_CONTAINER))
+                    .rounded(rem(24.))
                     .flex()
                     .flex_col()
                     .gap(rem(6.))
@@ -478,7 +591,11 @@ impl Adash {
                                     .child(if self.findings.is_empty() {
                                         "没有浪费".to_owned()
                                     } else {
-                                        format!("可省 {} / 月", money(findings_savings))
+                                        format!(
+                                            "{} 项 · 可省 {} / 月",
+                                            self.findings.len(),
+                                            money(findings_savings)
+                                        )
                                     }),
                             ),
                     )

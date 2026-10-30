@@ -4,8 +4,9 @@ members = [
     "crates/ucloud-api",
     "crates/adash-core",
     "crates/adash-tool",
-    "crates/pi-rpc",
+    "crates/agent-sdk",
     "crates/adash-app",
+    "crates/adash-ssh",
 ]
 exclude = ["third_party"]
 
@@ -18,7 +19,8 @@ publish = false
 [workspace.dependencies]
 ucloud-api = { path = "crates/ucloud-api" }
 adash-core = { path = "crates/adash-core" }
-pi-rpc = { path = "crates/pi-rpc" }
+adash-ssh = { path = "crates/adash-ssh" }
+agent-sdk = { path = "crates/agent-sdk" }
 
 # UI: must match the submodule's pinned GPUI/Base/Kit (see its Cargo.toml).
 gpui-kit = { git = "https://github.com/longbridge/gpui-kit", branch = "main" }

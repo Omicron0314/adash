@@ -1,6 +1,6 @@
 [package]
-name = "pi-rpc"
-description = "Client for pi --mode rpc (JSONL over stdio)"
+name = "agent-sdk"
+description = "Rust boundary for adash's embedded pi SDK host (JSONL over stdio)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

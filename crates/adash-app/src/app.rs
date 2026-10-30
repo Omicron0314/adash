@@ -7,6 +7,8 @@
 
 use crate::agent::{Agent, ChatMessage, ConfirmRequest};
 use crate::i18n::{self, nav};
+use crate::ssh::{ForwardForm, HostForm, IdentityForm, SnippetForm, SshSession};
+use crate::widgets;
 use adash_core::executor;
 use adash_core::flow::{Flow, FlowRun};
 use adash_core::inventory::Inventory;
@@ -16,12 +18,14 @@ use adash_core::project::{ProjectView, project_views};
 use adash_core::resource::{ResourceId, ResourceKind, money};
 use adash_core::state::{ProjectRecord, Store, now_secs};
 use adash_core::{Billing, PlanKind, Resource};
+use adash_ssh::{ForwardDirection, IdentityKind, ProfileStore};
 use gpui::base::input::InputState;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_kit_material::prelude::*;
 use gpui_kit_material::theme;
 use std::collections::BTreeSet;
+use std::path::PathBuf;
 use std::time::Duration;
 use ucloud_api::{Mode, UcloudClient};
 
@@ -34,11 +38,13 @@ pub enum Page {
     Resources,
     /// A project's service graph.
     Flows,
+    /// Saved SSH hosts.
+    Hosts,
     /// SSH identities (transport lands in M6).
     Identities,
-    /// Reusable command snippets (M6).
+    /// Reusable command snippets.
     Snippets,
-    /// Port forwarding rules (M6).
+    /// Port forwarding rules.
     PortForward,
     /// Credentials, theme, language.
     Settings,
@@ -48,7 +54,7 @@ pub enum Page {
 
 impl Page {
     /// Product pages, in sidebar order.
-    pub const PRODUCT: [Self; 3] = [Self::Home, Self::Resources, Self::Flows];
+    pub const PRODUCT: [Self; 4] = [Self::Home, Self::Resources, Self::Hosts, Self::Flows];
     /// Host-connection pages, in sidebar order.
     pub const HOSTS: [Self; 3] = [Self::Identities, Self::Snippets, Self::PortForward];
 
@@ -58,6 +64,7 @@ impl Page {
             Self::Home => "home".to_owned(),
             Self::Resources => "resources".to_owned(),
             Self::Flows => "flows".to_owned(),
+            Self::Hosts => "hosts".to_owned(),
             Self::Identities => "identities".to_owned(),
             Self::Snippets => "snippets".to_owned(),
             Self::PortForward => "port-forward".to_owned(),
@@ -72,6 +79,7 @@ impl Page {
             Self::Home => nav::HOME,
             Self::Resources => nav::RESOURCES,
             Self::Flows => nav::FLOWS,
+            Self::Hosts => nav::HOSTS,
             Self::Identities => nav::IDENTITIES,
             Self::Snippets => nav::SNIPPETS,
             Self::PortForward => nav::PORT_FORWARD,
@@ -79,15 +87,6 @@ impl Page {
             Self::Session(_) => nav::HOSTS,
         }
     }
-}
-
-/// An open host session: one row in the sidebar, one window on the host.
-#[derive(Debug, Clone)]
-pub struct HostSession {
-    /// The cloud host.
-    pub resource: ResourceId,
-    /// Host name, shown in the sidebar.
-    pub name: String,
 }
 
 /// Resource filters, shared by the page and the overview's deep links.
@@ -154,8 +153,41 @@ pub struct Adash {
     pub flow_compact: bool,
     /// Node selected on the flow canvas.
     pub flow_selected: Option<String>,
+    /// Saved SSH hosts, identities, snippets, forwards and trusted keys.
+    pub profiles: ProfileStore,
+    /// Why the profile file could not load.
+    pub profile_error: Option<String>,
     /// Open host sessions.
-    pub sessions: Vec<HostSession>,
+    pub sessions: Vec<SshSession>,
+    /// Add-host fields.
+    pub host_form: HostForm,
+    /// Add-identity fields and the chosen kind.
+    pub identity_form: IdentityForm,
+    /// Chosen identity kind.
+    pub identity_kind: IdentityKind,
+    /// Add-snippet fields.
+    pub snippet_form: SnippetForm,
+    /// Add-forward fields and direction.
+    pub forward_form: ForwardForm,
+    /// Chosen forward direction.
+    pub forward_direction: ForwardDirection,
+    /// One-line command to run on the active host.
+    pub run_command: Entity<InputState>,
+    /// Keeps the SSH reply drain alive.
+    pub ssh_timer: Option<Task<()>>,
+    /// 0 通用 / 1 终端 / 2 连接 / 3 关于.
+    pub settings_category: usize,
+    /// Last focused SSH session; retained when opening snippets or forwards.
+    pub active_session: Option<usize>,
+    pub selected_hosts: BTreeSet<String>,
+    pub pending_close: Option<usize>,
+    pub pending_exit: bool,
+    pub batch_output: Vec<String>,
+    pub batch_rx:
+        Option<std::sync::mpsc::Receiver<(String, Result<adash_ssh::ExecResult, String>)>>,
+    pub batch_running: usize,
+    pub pending_remote_delete: Option<(usize, PathBuf)>,
+    pub pending_forget_keys: bool,
     /// One-shot message under the title bar.
     pub notice: Option<String>,
     /// Whether a refresh is in flight.
@@ -183,8 +215,29 @@ impl Adash {
             let _ = store.save();
         }
 
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder(i18n::INPUT_PLACEHOLDER));
+        let input = cx.new(|cx| InputState::new(window, cx));
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("搜索名称或 id"));
+        let run_command =
+            cx.new(|cx| InputState::new(window, cx).placeholder("在主机上执行命令，回车运行"));
+        let profile_path = crate::agent::data_dir()
+            .unwrap_or_default()
+            .join("hosts.json");
+        let (profiles, profile_error) = match ProfileStore::open(profile_path) {
+            Ok(store) => (store, None),
+            Err(error) => {
+                let fallback =
+                    std::env::temp_dir().join(format!("adash-hosts-{}.json", std::process::id()));
+                let store = ProfileStore::open(fallback).unwrap_or_else(|_| {
+                    ProfileStore::open(PathBuf::from("/tmp/adash-hosts.json"))
+                        .expect("temp profile store")
+                });
+                (store, Some(format!("{error:#}")))
+            }
+        };
+        let host_form = HostForm::new(window, cx);
+        let identity_form = IdentityForm::new(window, cx);
+        let snippet_form = SnippetForm::new(window, cx);
+        let forward_form = ForwardForm::new(window, cx);
 
         let mut app = Self {
             page: Page::Home,
@@ -207,21 +260,109 @@ impl Adash {
             session_tab: 0,
             flow_compact: false,
             flow_selected: None,
+            profiles,
+            profile_error,
             sessions: Vec::new(),
+            host_form,
+            identity_form,
+            identity_kind: IdentityKind::Agent,
+            snippet_form,
+            forward_form,
+            forward_direction: ForwardDirection::Local,
+            run_command,
+            ssh_timer: None,
+            settings_category: 0,
+            active_session: None,
+            selected_hosts: BTreeSet::new(),
+            pending_close: None,
+            pending_exit: false,
+            batch_output: Vec::new(),
+            batch_rx: None,
+            batch_running: 0,
+            pending_remote_delete: None,
+            pending_forget_keys: false,
             notice: None,
             loading: false,
             last_refresh: 0,
             pump: None,
         };
 
-        if let Some(reason) = app.agent.offline_reason() {
-            app.messages.push(ChatMessage::agent(
-                format!("（{}：{reason}）", i18n::OFFLINE_PREFIX),
-                true,
-            ));
+        if let Some(reason) = app.agent.offline_reason()
+            && let Some(welcome) = app.messages.first_mut()
+        {
+            welcome.text.push_str(&format!("\n（{reason}）"));
         }
+        cx.observe(&app.search, |_, _, cx| cx.notify()).detach();
+        // Enter sends; Shift+Enter stays available for a future multi-line
+        // composer. The subscription is dropped with the view.
+        cx.subscribe_in(
+            &app.input,
+            window,
+            |this, _, event: &gpui::base::input::InputEvent, window, cx| {
+                if matches!(
+                    event,
+                    gpui::base::input::InputEvent::PressEnter { shift: false, .. }
+                ) {
+                    this.send_input(window, cx);
+                }
+            },
+        )
+        .detach();
+        app.ssh_timer = Some(cx.spawn_in(window, async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(200))
+                    .await;
+                if this
+                    .update_in(cx, |this, window, cx| {
+                        this.poll_ssh(window, cx);
+                        gpui_kit_material::theme::advance_component_theme(
+                            crate::palette::resolve(&this.store.data.settings.appearance, cx),
+                            1.,
+                            window,
+                            cx,
+                        );
+                        if !this.agent.streaming {
+                            let previous = this.agent.model.clone();
+                            this.agent.pump(|_| {}, |_| {});
+                            if previous != this.agent.model {
+                                cx.notify();
+                            }
+                        }
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        }));
+        gpui_kit_material::theme::advance_component_theme(
+            crate::palette::resolve(&app.store.data.settings.appearance, cx),
+            1.,
+            window,
+            cx,
+        );
         app.refresh();
         app.flow_project = app.default_flow_project();
+        app.apply_startup_env(window, cx);
+        let view = cx.entity().downgrade();
+        window.on_window_should_close(cx, move |_, cx| {
+            view.update(cx, |this, cx| {
+                if this.store.data.settings.confirm_close
+                    && this
+                        .sessions
+                        .iter()
+                        .any(|session| session.connected || session.terminal.is_some())
+                {
+                    this.pending_exit = true;
+                    cx.notify();
+                    false
+                } else {
+                    true
+                }
+            })
+            .unwrap_or(true)
+        });
         app
     }
 
@@ -245,6 +386,70 @@ impl Adash {
         self.loading = false;
         if self.flow_project.is_none() {
             self.flow_project = self.default_flow_project();
+        }
+    }
+
+    /// Development aid for docs and manual tests:
+    /// `ADASH_START_PAGE=resources|flows|settings` plus
+    /// `ADASH_START_SELECTED=<kind:id>` and `ADASH_START_FLOW=<slug>`.
+    /// It only chooses where the window opens; it never changes capabilities.
+    fn apply_startup_env(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Ok(key) = std::env::var("ADASH_START_SELECTED")
+            && let Some((kind, id)) = key.split_once(':')
+            && let Some(kind) = ResourceKind::ALL
+                .into_iter()
+                .find(|candidate| candidate.as_str() == kind)
+        {
+            self.selected = Some(ResourceId::new(kind, id));
+        }
+        if let Ok(slug) = std::env::var("ADASH_START_FLOW") {
+            self.flow_project = Some(slug);
+        }
+        if let Ok(appearance) = std::env::var("ADASH_DEMO_APPEARANCE") {
+            self.store.data.settings.appearance = appearance;
+        }
+        if let Ok(category) = std::env::var("ADASH_START_SETTINGS") {
+            self.settings_category = category.parse::<usize>().unwrap_or(0).min(3);
+        }
+
+        self.page = match std::env::var("ADASH_START_PAGE").as_deref() {
+            Ok("resources") => Page::Resources,
+            Ok("hosts") => Page::Hosts,
+            Ok("flows") => Page::Flows,
+            Ok("settings") => Page::Settings,
+            Ok("identities") => Page::Identities,
+            Ok("snippets") => Page::Snippets,
+            Ok("port-forward") => Page::PortForward,
+            Ok("session") => {
+                let key = self
+                    .selected
+                    .as_ref()
+                    .map(ResourceId::key)
+                    .unwrap_or_default();
+                if let Some(resource) = self
+                    .inventory
+                    .resources
+                    .iter()
+                    .find(|resource| resource.id.key() == key)
+                    .cloned()
+                {
+                    self.open_session(&resource, window, cx);
+                }
+                self.page
+            }
+            _ => Page::Home,
+        };
+
+        // Demo/screenshot hooks: run one local question and start a replay so
+        // the state is reproducible without clicking. Both are read-only.
+        if let Ok(question) = std::env::var("ADASH_DEMO_ASK") {
+            self.ask(question, cx);
+        }
+        if std::env::var_os("ADASH_DEMO_REPLAY").is_some()
+            && let Some(flow) = self.current_flow()
+            && let Some(run) = flow.runs.last().cloned()
+        {
+            self.start_replay(run.id, cx);
         }
     }
 
@@ -297,7 +502,7 @@ impl Adash {
     /// Ask the agent (or the local responder) one question.
     pub fn ask(&mut self, text: String, cx: &mut Context<Self>) {
         self.messages.push(ChatMessage::user(text.clone()));
-        if self.agent.prompt(&text).is_some() {
+        if self.agent.prompt(&text) {
             self.messages.push(ChatMessage::agent("", false));
             self.start_pump(cx);
             cx.notify();
@@ -336,7 +541,7 @@ impl Adash {
     }
 
     /// Drain agent records; `Some(true)` when the run is over.
-    fn pump_once(&mut self, _cx: &mut Context<Self>) -> Option<bool> {
+    fn pump_once(&mut self, cx: &mut Context<Self>) -> Option<bool> {
         let mut text = String::new();
         let mut notes = Vec::new();
         let pending: Option<ConfirmRequest>;
@@ -349,6 +554,30 @@ impl Adash {
             settled
         };
 
+        let streamed = !text.is_empty() || !notes.is_empty();
+        if pending.is_some() || !notes.is_empty() || settled {
+            self.store = Store::open(self.store.path().to_path_buf());
+        }
+        if let Some(reason) = self.agent.failure.take() {
+            let question = self
+                .messages
+                .iter()
+                .rev()
+                .find(|message| message.role == crate::agent::Role::User)
+                .map(|message| message.text.clone());
+            if let Some(question) = question {
+                let (answer, notes) = self.offline_answer(&question);
+                if let Some(message) = self.messages.last_mut()
+                    && message.role == crate::agent::Role::Agent
+                {
+                    message.text = answer;
+                    message.offline = true;
+                    message.notes = notes;
+                    message.notes.push(format!("模型不可用：{reason}"));
+                }
+                cx.notify();
+            }
+        }
         if !text.is_empty()
             && let Some(last) = self.messages.last_mut()
             && last.role == crate::agent::Role::Agent
@@ -376,11 +605,15 @@ impl Adash {
             });
             self.refresh();
         }
+        // Streamed deltas are only visible if the view is told to repaint.
+        if streamed {
+            cx.notify();
+        }
         Some(settled)
     }
 
-    /// Answer the agent's confirm request, minting the approval when the user
-    /// said yes. Without a live agent (offline), the plan is applied locally.
+    /// SDK confirmations resume the same pending tool call; offline Mock
+    /// confirmations use the same expiry/hash/one-time-approval checks.
     pub fn decide_plan(&mut self, plan_id: String, approve: bool, cx: &mut Context<Self>) {
         let pending = self.agent.pending.clone();
         if !approve {
@@ -388,71 +621,108 @@ impl Adash {
                 self.agent.answer_confirm(&request.request_id, false);
             }
             self.store.take_plan(&plan_id);
-            let _ = self.store.save();
-            self.notice = Some("计划已取消，云上没有任何变更".to_owned());
+            if let Err(error) = self.store.save() {
+                self.notice = Some(error);
+            } else {
+                self.notice = Some("计划已取消，云上没有任何变更".to_owned());
+            }
             cx.notify();
             return;
         }
-
+        if let Err(error) = self.store.plan_for_apply(&plan_id) {
+            self.notice = Some(error);
+            cx.notify();
+            return;
+        }
+        if pending.is_none() && self.mode != Mode::Mock {
+            self.notice = Some("真实账户的写操作暂未接入。计划已保留，没有修改云资源。".to_owned());
+            cx.notify();
+            return;
+        }
         let Some(token) = self.store.approve(&plan_id, adash_core::plan::TTL_SECS) else {
             self.notice = Some("计划已不存在，请重新生成".to_owned());
             cx.notify();
             return;
         };
-        let _ = self.store.save();
-
-        match pending {
-            Some(request) => {
-                self.agent.answer_confirm(&request.request_id, true);
-                self.notice = Some(format!(
-                    "已确认计划，批准令牌 {}…",
-                    &token[..token.len().min(12)]
-                ));
-                self.start_pump(cx);
+        if let Err(error) = self.store.save() {
+            self.notice = Some(error);
+            cx.notify();
+            return;
+        }
+        if let Some(request) = pending {
+            self.agent.answer_confirm(&request.request_id, true);
+            self.notice = Some("已确认，代理正在执行批准的计划".to_owned());
+            self.start_pump(cx);
+        } else {
+            if !self.store.consume_approval(&plan_id, &token) {
+                self.notice = Some("批准已失效，请重新生成计划".to_owned());
+                cx.notify();
+                return;
             }
-            None => {
-                // Offline: nothing will call `apply`, so the app records it the
-                // same way the tool would, and says what that means.
-                match executor::apply_mock(&mut self.store, &self.inventory, &plan_id) {
-                    Ok(outcome) => {
-                        let _ = self.store.save();
-                        self.messages.push(ChatMessage::agent(
-                            format!(
-                                "已批准并记录执行（离线模式，未真实创建资源）。项目 {} 的流程图已更新。",
-                                outcome.project
-                            ),
-                            true,
-                        ));
-                        self.replay = Replay {
-                            run: Some(outcome.run.id.clone()),
-                            step: outcome.run.steps.len(),
-                            playing: false,
-                        };
-                        self.refresh();
-                        self.page = Page::Flows;
-                        self.flow_project = Some(outcome.project);
-                    }
-                    Err(error) => self.notice = Some(format!("执行失败：{error}")),
+            match executor::apply_mock(&mut self.store, &self.inventory, &plan_id) {
+                Ok(outcome) => {
+                    let _ = self.store.save();
+                    self.messages.push(ChatMessage::agent(
+                        format!(
+                            "已记录 Mock 执行，未修改真实云资源。项目 {} 的服务图已更新。",
+                            outcome.project
+                        ),
+                        true,
+                    ));
+                    self.refresh();
+                    self.page = Page::Flows;
+                    self.flow_project = Some(outcome.project);
                 }
+                Err(error) => self.notice = Some(format!("执行失败：{error}")),
             }
         }
         cx.notify();
     }
 
-    /// Open (or focus) a host session from the resources page.
-    pub fn open_session(&mut self, resource: &Resource, cx: &mut Context<Self>) {
+    /// Open (or focus) a host session from the resources page. Cloud hosts are
+    /// persisted as SSH targets so they also appear on the 主机 page.
+    pub fn open_session(
+        &mut self,
+        resource: &Resource,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let id = format!("cloud-{}", resource.id.key());
         if let Some(index) = self
             .sessions
             .iter()
-            .position(|session| session.resource == resource.id)
+            .position(|session| session.host.id == id)
         {
             self.page = Page::Session(index);
-        } else {
-            self.sessions.push(HostSession {
-                resource: resource.id.clone(),
-                name: resource.name.clone(),
-            });
-            self.page = Page::Session(self.sessions.len() - 1);
+            cx.notify();
+            return;
+        }
+        let Some(address) = resource
+            .public_ip
+            .clone()
+            .or_else(|| resource.private_ip.clone())
+        else {
+            self.notice = Some("这台主机没有可用 IP，先在云资源页绑定 EIP".to_owned());
+            cx.notify();
+            return;
+        };
+        let host = adash_ssh::Host {
+            id: id.clone(),
+            name: resource.name.clone(),
+            address,
+            port: 22,
+            username: "root".to_owned(),
+            identity: None,
+        };
+        self.profiles.data.hosts.insert(id.clone(), host.clone());
+        let _ = self.profiles.save();
+        self.sessions.push(SshSession::new(host, window, cx));
+        let index = self.sessions.len() - 1;
+        self.page = Page::Session(index);
+        self.active_session = Some(index);
+        // Mock IPs are documentation data, not connection targets.
+        if self.mode != Mode::Mock {
+            self.connect(index, cx);
         }
         cx.notify();
     }
@@ -648,10 +918,136 @@ impl Render for Adash {
                     .child(self.render_sidebar(cx))
                     .child(self.render_content(window, cx)),
             )
+            .children(self.render_overlay(cx))
     }
 }
 
 impl Adash {
+    /// Modal confirmations that must not proceed silently: closing live
+    /// sessions, deleting a remote file, forgetting host keys.
+    fn render_overlay(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let (title, body, confirm_label, destructive) = if self.pending_exit {
+            (
+                "还有活动会话",
+                format!(
+                    "当前有 {} 个已连接的主机会话，关闭窗口会断开它们。",
+                    self.sessions
+                        .iter()
+                        .filter(|session| session.connected)
+                        .count()
+                ),
+                "关闭窗口",
+                true,
+            )
+        } else if let Some((_, path)) = &self.pending_remote_delete {
+            (
+                "删除远程文件",
+                format!("将永久删除 {}，此操作不可撤销。", path.display()),
+                "删除",
+                true,
+            )
+        } else if let Some(index) = self.pending_close {
+            let name = self
+                .sessions
+                .get(index)
+                .map_or_else(|| "会话".to_owned(), |session| session.host.name.clone());
+            (
+                "关闭会话",
+                format!("关闭 {name} 的终端与转发连接？"),
+                "关闭会话",
+                true,
+            )
+        } else if self.pending_forget_keys {
+            (
+                "清除主机指纹",
+                "清除后下次连接每台主机都需要重新核对指纹。".to_owned(),
+                "清除",
+                true,
+            )
+        } else {
+            return None;
+        };
+        let card = div()
+            .flex()
+            .flex_col()
+            .gap(rem(12.))
+            .w(rem(420.))
+            .p(rem(24.))
+            .rounded(rem(28.))
+            .bg(color(ColorRole::SURFACE_CONTAINER_LOWEST))
+            .child(
+                div()
+                    .text_size(rem(22.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(title),
+            )
+            .child(
+                div()
+                    .text_size(TEXT_BODY)
+                    .text_color(color(ColorRole::ON_SURFACE_VARIANT))
+                    .child(body),
+            )
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap(rem(8.))
+                    .child(widgets::text_button(
+                        "overlay-cancel",
+                        "取消",
+                        cx.listener(|this, _, _, cx| {
+                            this.pending_exit = false;
+                            this.pending_close = None;
+                            this.pending_remote_delete = None;
+                            this.pending_forget_keys = false;
+                            cx.notify();
+                        }),
+                    ))
+                    .child({
+                        let _ = destructive;
+                        widgets::filled_button(
+                            "overlay-confirm",
+                            confirm_label,
+                            cx.listener(move |this, _, window, cx| {
+                                if this.pending_exit {
+                                    this.pending_exit = false;
+                                    for session in &mut this.sessions {
+                                        if let Some(terminal) = session.terminal.take() {
+                                            terminal.close();
+                                        }
+                                        if let Some(forward) = session.forward.take() {
+                                            forward.stop();
+                                        }
+                                    }
+                                    window.remove_window();
+                                } else if this.pending_remote_delete.is_some() {
+                                    this.confirm_remote_delete(cx);
+                                } else if let Some(index) = this.pending_close.take() {
+                                    this.finish_close_session(index, cx);
+                                } else if this.pending_forget_keys {
+                                    this.profiles.data.known_hosts.clear();
+                                    let _ = this.profiles.save();
+                                    this.pending_forget_keys = false;
+                                    this.notice = Some("已清除主机指纹".to_owned());
+                                    cx.notify();
+                                }
+                            }),
+                        )
+                    }),
+            );
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .bg(gpui::black().opacity(0.32))
+                .child(card)
+                .into_any_element(),
+        )
+    }
+
     fn render_titlebar(&self, cx: &mut Context<Self>) -> AnyElement {
         let labels = CaptionLabels {
             minimize: "最小化".into(),
@@ -659,7 +1055,7 @@ impl Adash {
             restore: "还原".into(),
             close: "关闭".into(),
         };
-        let mut bar = TitleBar::new("adash-titlebar", px(56.), labels)
+        let mut bar = TitleBar::new("adash-titlebar", px(32.), labels)
             .child(
                 div()
                     .flex()
@@ -670,7 +1066,7 @@ impl Adash {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .size(rem(28.))
+                            .size(rem(20.))
                             .rounded(rem(8.))
                             .bg(color(ColorRole::PRIMARY))
                             .child(
@@ -683,21 +1079,9 @@ impl Adash {
                     )
                     .child(
                         div()
-                            .flex()
-                            .flex_col()
-                            .gap(px(1.))
-                            .child(
-                                div()
-                                    .text_size(TEXT_BODY)
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(i18n::APP_NAME),
-                            )
-                            .child(
-                                div()
-                                    .text_size(rem(10.))
-                                    .text_color(color(ColorRole::ON_SURFACE_VARIANT))
-                                    .child(i18n::TAGLINE),
-                            ),
+                            .text_size(rem(13.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(i18n::APP_NAME),
                     )
                     .child(self.mode_badge()),
             )
@@ -764,40 +1148,23 @@ impl Adash {
         let mut rail = div()
             .flex()
             .flex_col()
-            .w(px(232.))
+            .w(px(96.))
             .h_full()
             .min_h_0()
-            .gap(px(2.))
-            .p(rem(12.))
-            .border_r_1()
-            .border_color(color(ColorRole::OUTLINE_VARIANT))
-            .bg(color(ColorRole::SURFACE_CONTAINER_LOW));
+            .items_center()
+            .gap(px(4.))
+            .py(rem(16.))
+            .bg(color(ColorRole::SURFACE));
 
         for page in Page::PRODUCT {
             rail = rail.child(self.nav_item(page.id(), page.label(), page == self.page, page, cx));
         }
 
-        rail = rail.child(
-            div()
-                .pt(rem(12.))
-                .pb(rem(4.))
-                .child(crate::widgets::section_header(nav::HOSTS)),
-        );
-
-        if self.sessions.is_empty() {
-            rail = rail.child(
-                div()
-                    .px(rem(14.))
-                    .py(rem(6.))
-                    .text_size(TEXT_AUX)
-                    .text_color(color(ColorRole::ON_SURFACE_VARIANT))
-                    .child(i18n::empty::NO_SESSION),
-            );
-        } else {
+        if !self.sessions.is_empty() {
             for (index, session) in self.sessions.iter().enumerate() {
                 rail = rail.child(self.nav_item(
                     format!("session-{index}"),
-                    session.name.clone(),
+                    session.host.name.clone(),
                     self.page == Page::Session(index),
                     Page::Session(index),
                     cx,
@@ -829,32 +1196,35 @@ impl Adash {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let target_id = id.clone();
-        div()
-            .id(SharedString::from(id))
-            .flex()
-            .items_center()
-            .h(px(42.))
-            .px(rem(14.))
-            .rounded(rem(21.))
-            .cursor_pointer()
-            .when(selected, |this| {
-                this.bg(color(ColorRole::SECONDARY_CONTAINER))
-                    .text_color(color(ColorRole::ON_SECONDARY_CONTAINER))
-            })
-            .when(!selected, |this| {
-                this.hover(|this| this.bg(color(ColorRole::SURFACE_CONTAINER_HIGH)))
-            })
+        let symbol = match target {
+            Page::Home => "home",
+            Page::Resources => "cloud",
+            Page::Hosts => "dns",
+            Page::Flows => "account_tree",
+            Page::Session(_) => "terminal",
+            Page::Identities => "key",
+            Page::Snippets => "code",
+            Page::PortForward => "swap_horiz",
+            Page::Settings => "tune",
+        };
+        let item = NavItem::new(
+            SharedString::from(id.clone()),
+            label.into(),
+            NavIcon::symbol(
+                gpui_kit_material::icons::Symbol::named(symbol).expect("bundled symbol"),
+            ),
+        );
+        NavigationItem::new(SharedString::from(id), item)
+            .layout(NavItemLayout::Vertical)
+            .selected(selected)
             .on_click(cx.listener(move |this, _, _, cx| {
                 let _ = &target_id;
                 this.page = target;
+                if let Page::Session(index) = target {
+                    this.active_session = Some(index);
+                }
                 cx.notify();
             }))
-            .child(
-                div()
-                    .text_size(TEXT_BODY)
-                    .font_weight(FontWeight::MEDIUM)
-                    .child(label.into()),
-            )
             .into_any_element()
     }
 
@@ -863,11 +1233,12 @@ impl Adash {
             Page::Home => self.render_home(window, cx),
             Page::Resources => self.render_resources(window, cx),
             Page::Flows => self.render_flows(window, cx),
+            Page::Hosts => self.render_hosts(window, cx),
             Page::Session(index) => self.render_session(index, window, cx),
-            Page::Identities | Page::Snippets | Page::PortForward => {
-                self.render_host_placeholder(self.page)
-            }
-            Page::Settings => self.render_settings(cx),
+            Page::Identities => self.render_identities(cx),
+            Page::Snippets => self.render_snippets(window, cx),
+            Page::PortForward => self.render_port_forward(cx),
+            Page::Settings => self.render_settings(window, cx),
         };
 
         let mut column = div()
@@ -876,8 +1247,15 @@ impl Adash {
             .flex_1()
             .min_w_0()
             .min_h_0()
-            .gap(rem(10.))
-            .p(rem(20.));
+            .gap(rem(12.))
+            .my(px(12.))
+            .mr(px(12.))
+            .when(self.page != Page::Home, |panel| {
+                panel
+                    .p(rem(28.))
+                    .rounded(rem(28.))
+                    .bg(color(ColorRole::SURFACE_CONTAINER_LOW))
+            });
 
         if let Some(error) = &self.client_error {
             column = column.child(crate::widgets::notice(
@@ -889,45 +1267,15 @@ impl Adash {
             column = column.child(crate::widgets::notice(notice.clone(), false));
         }
         column
-            .child(div().flex_1().min_h_0().child(body))
-            .into_any_element()
-    }
-
-    fn render_host_placeholder(&self, page: Page) -> AnyElement {
-        let (title, description) = match page {
-            Page::Identities => (
-                nav::IDENTITIES,
-                "身份会在连接主机时使用：密码或私钥，只存在系统钥匙串里，不进入模型上下文。",
-            ),
-            Page::Snippets => (
-                nav::SNIPPETS,
-                "片段是可以一次在多个主机上执行的命令，等 SSH 传输落地后启用。",
-            ),
-            _ => (
-                nav::PORT_FORWARD,
-                "端口转发规则（本地/远程），等 SSH 传输落地后启用。",
-            ),
-        };
-        div()
-            .flex()
-            .flex_col()
-            .gap(rem(10.))
             .child(
                 div()
-                    .text_size(TEXT_TITLE)
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child(title),
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_hidden()
+                    .child(body),
             )
-            .child(
-                div()
-                    .text_size(TEXT_BODY)
-                    .text_color(color(ColorRole::ON_SURFACE_VARIANT))
-                    .child(description),
-            )
-            .child(crate::widgets::notice(
-                "SSH 传输在 M6 落地（见 docs/ROADMAP.md）；现在点开主机会显示它的真实云资源信息。",
-                false,
-            ))
             .into_any_element()
     }
 }

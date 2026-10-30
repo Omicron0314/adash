@@ -38,9 +38,9 @@ impl Metrics {
         } else {
             Self {
                 node_w: 196.,
-                node_h: 84.,
-                col_gap: 72.,
-                row_gap: 24.,
+                node_h: 76.,
+                col_gap: 64.,
+                row_gap: 16.,
                 pad: 24.,
             }
         }
@@ -49,7 +49,7 @@ impl Metrics {
 
 impl Adash {
     /// Flow page: project switcher, canvas and replay timeline.
-    pub fn render_flows(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    pub fn render_flows(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let projects = self.inventory.flow_projects();
         let Some(flow) = self.current_flow() else {
             return div()
@@ -58,7 +58,7 @@ impl Adash {
                 .gap(rem(10.))
                 .child(
                     div()
-                        .text_size(TEXT_TITLE)
+                        .text_size(rem(32.))
                         .font_weight(FontWeight::SEMIBOLD)
                         .child(i18n::nav::FLOWS),
                 )
@@ -88,7 +88,7 @@ impl Adash {
             ));
         }
 
-        let canvas = self.render_canvas(&flow, cx);
+        let canvas = self.render_canvas(&flow, window, cx);
         let timeline = self.render_timeline(&flow, cx);
 
         div()
@@ -104,7 +104,7 @@ impl Adash {
                     .gap(rem(10.))
                     .child(
                         div()
-                            .text_size(TEXT_TITLE)
+                            .text_size(rem(32.))
                             .font_weight(FontWeight::SEMIBOLD)
                             .child(format!("{} · 服务图", flow.name)),
                     )
@@ -125,12 +125,20 @@ impl Adash {
                     )),
             )
             .child(widgets::chip_row(chips))
-            .child(canvas)
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_h_0()
+                    .gap(rem(16.))
+                    .child(canvas)
+                    .child(self.render_flow_inspector(&flow, cx)),
+            )
             .child(timeline)
             .into_any_element()
     }
 
-    fn render_canvas(&self, flow: &Flow, cx: &mut Context<Self>) -> AnyElement {
+    fn render_canvas(&self, flow: &Flow, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let metrics = Metrics::for_compact(self.flow_compact);
         let positions = layout(flow, metrics);
 
@@ -139,6 +147,7 @@ impl Adash {
             .map(|(x, _)| *x + metrics.node_w)
             .fold(0.0_f32, f32::max)
             + metrics.pad;
+        let width = width.max(f32::from(window.bounds().size.width) - 420.);
         let height = positions
             .values()
             .map(|(_, y)| *y + metrics.node_h)
@@ -154,7 +163,22 @@ impl Adash {
             .rounded(rem(16.))
             .bg(widgets::canvas_background())
             .border_1()
-            .border_color(color(ColorRole::OUTLINE_VARIANT));
+            .border_color(color(ColorRole::SURFACE_CONTAINER_HIGH));
+
+        // The reference editor uses a quiet dotted workspace behind its nodes.
+        for col in 0..(width / 24.) as usize {
+            for row in 0..(height / 24.) as usize {
+                canvas = canvas.child(
+                    div()
+                        .absolute()
+                        .left(px(col as f32 * 24. + 12.))
+                        .top(px(row as f32 * 24. + 12.))
+                        .size(px(2.))
+                        .rounded_full()
+                        .bg(color(ColorRole::OUTLINE_VARIANT)),
+                );
+            }
+        }
 
         for (index, edge) in flow.edges.iter().enumerate() {
             let Some(from) = positions.get(&edge.from) else {
@@ -166,6 +190,24 @@ impl Adash {
             for (segment, (x, y, w, h)) in edge_segments(from, to, metrics).into_iter().enumerate()
             {
                 let lit = highlighted.contains(&edge.from) && highlighted.contains(&edge.to);
+                if !lit && edge.evidence == adash_core::Evidence::Inferred {
+                    let horizontal = w > h;
+                    let length = if horizontal { w } else { h };
+                    for dash in 0..(length / 10.).ceil() as usize {
+                        let offset = dash as f32 * 10.;
+                        let span = (length - offset).min(5.);
+                        canvas = canvas.child(
+                            div()
+                                .absolute()
+                                .left(px(x + if horizontal { offset } else { 0. }))
+                                .top(px(y + if horizontal { 0. } else { offset }))
+                                .w(px(if horizontal { span } else { w }))
+                                .h(px(if horizontal { h } else { span }))
+                                .bg(color(ColorRole::OUTLINE)),
+                        );
+                    }
+                    continue;
+                }
                 canvas = canvas.child(
                     div()
                         .id(SharedString::from(format!("edge-{index}-{segment}")))
@@ -234,7 +276,7 @@ impl Adash {
             .bg(color(if lit || selected {
                 ColorRole::SECONDARY_CONTAINER
             } else {
-                ColorRole::SURFACE_CONTAINER_HIGH
+                ColorRole::SURFACE_CONTAINER_LOWEST
             }))
             .border_1()
             .border_color(color(if selected {
@@ -244,13 +286,17 @@ impl Adash {
             }))
             .cursor_pointer();
 
-        if resource.is_some() {
-            let accent = match node.state {
-                adash_core::ResourceState::Running => ColorRole::TERTIARY,
-                adash_core::ResourceState::Error => ColorRole::ERROR,
-                _ => ColorRole::OUTLINE,
-            };
-            card = card.border_l_3().border_color(color(accent));
+        for _ in resource.iter() {
+            card = card.child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .top(rem(14.))
+                    .bottom(rem(14.))
+                    .w(px(3.))
+                    .rounded_full()
+                    .bg(color(ColorRole::PRIMARY)),
+            );
         }
 
         card = card
@@ -281,6 +327,87 @@ impl Adash {
             );
 
         card.into_any_element()
+    }
+
+    fn render_flow_inspector(&self, flow: &Flow, cx: &mut Context<Self>) -> AnyElement {
+        let selected = self
+            .flow_selected
+            .as_ref()
+            .and_then(|id| flow.nodes.iter().find(|node| &node.id == id));
+        let mut panel = CardSurface::new(CardVariant::Filled)
+            .bg(color(ColorRole::SURFACE_CONTAINER_LOWEST))
+            .w(rem(224.))
+            .flex_shrink_0()
+            .rounded(rem(24.))
+            .p(rem(20.))
+            .gap(rem(16.))
+            .child(
+                div()
+                    .text_size(rem(20.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(if selected.is_some() {
+                        i18n::flow::NODE_DETAILS
+                    } else {
+                        i18n::flow::PROJECT_OVERVIEW
+                    }),
+            );
+        if let Some(node) = selected {
+            panel = panel
+                .child(
+                    div()
+                        .text_size(rem(16.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child(node.label.clone()),
+                )
+                .child(
+                    div()
+                        .text_size(TEXT_AUX)
+                        .text_color(color(ColorRole::ON_SURFACE_VARIANT))
+                        .child(node.detail.clone()),
+                )
+                .child(widgets::state_pill(node.state));
+            if let Some(resource) = node.resource.as_ref() {
+                let target = resource.clone();
+                panel = panel.child(widgets::tonal_button(
+                    "inspect-flow-resource",
+                    i18n::flow::VIEW_RESOURCE,
+                    cx.listener(move |this, _, _, cx| {
+                        this.selected = Some(target.clone());
+                        this.page = Page::Resources;
+                        cx.notify();
+                    }),
+                ));
+            }
+        } else {
+            panel = panel
+                .child(div().text_size(rem(16.)).child(flow.name.clone()))
+                .child(widgets::kv_row(
+                    i18n::flow::NODES,
+                    flow.nodes.len().to_string(),
+                ))
+                .child(widgets::kv_row(
+                    i18n::flow::CONNECTIONS,
+                    flow.edges.len().to_string(),
+                ))
+                .child(widgets::kv_row(
+                    i18n::flow::RUNS,
+                    flow.runs.len().to_string(),
+                ))
+                .child(
+                    div()
+                        .text_size(TEXT_AUX)
+                        .text_color(color(ColorRole::ON_SURFACE_VARIANT))
+                        .child(i18n::flow::SELECT_HINT),
+                );
+        }
+        panel
+            .child(
+                div()
+                    .text_size(TEXT_AUX)
+                    .text_color(color(ColorRole::ON_SURFACE_VARIANT))
+                    .child(i18n::flow::LEGEND),
+            )
+            .into_any_element()
     }
 
     fn render_timeline(&self, flow: &Flow, cx: &mut Context<Self>) -> AnyElement {
@@ -332,16 +459,33 @@ impl Adash {
                         }),
                     ));
             }
+            None if flow.runs.is_empty() => {
+                row = row.child(
+                    div()
+                        .flex_1()
+                        .text_size(TEXT_AUX)
+                        .text_color(color(ColorRole::ON_SURFACE_VARIANT))
+                        .child("还没有执行记录；代理部署后这里可以回放。"),
+                );
+            }
             None => {
+                let latest = flow.runs.last().cloned();
                 row = row
                     .child(
                         div()
                             .flex_1()
                             .text_size(TEXT_AUX)
                             .text_color(color(ColorRole::ON_SURFACE_VARIANT))
-                            .child("还没有执行记录；代理部署后这里可以回放。"),
+                            .child(format!(
+                                "{} 条执行记录 · 最近一次 {}",
+                                flow.runs.len(),
+                                latest.as_ref().map_or_else(
+                                    || "—".to_owned(),
+                                    |run| format_time(run.started_at)
+                                )
+                            )),
                     )
-                    .children(flow.runs.last().map(|run| {
+                    .children(latest.map(|run| {
                         let run_id = run.id.clone();
                         widgets::tonal_button(
                             "replay-latest",
@@ -357,18 +501,15 @@ impl Adash {
         row.into_any_element()
     }
 
-    fn highlighted_nodes(&self, flow: &Flow) -> BTreeSet<String> {
+    fn highlighted_nodes(&self, _flow: &Flow) -> BTreeSet<String> {
         let mut set = BTreeSet::new();
         if let Some(run) = self.replay_run() {
             for step in run.steps.iter().take(self.replay.step) {
                 set.insert(step.node.clone());
             }
-        } else if let Some(run) = flow.runs.last() {
-            // No playback yet: show the freshest execution's nodes dimly lit.
-            for step in &run.steps {
-                set.insert(step.node.clone());
-            }
         }
+        // Without playback the canvas stays neutral: "all nodes lit" would read
+        // as a selection rather than a history.
         set
     }
 

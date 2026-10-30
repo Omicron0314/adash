@@ -420,7 +420,7 @@ mod tests {
             .find(|resource| resource.id.id == "eip-orphan1")
             .expect("fixture orphan");
         assert!(orphan.attached_to.is_empty());
-        assert_eq!(orphan.state, ResourceState::Stopped);
+        assert_eq!(orphan.state, ResourceState::Available);
     }
 
     #[test]

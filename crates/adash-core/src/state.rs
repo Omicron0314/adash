@@ -43,6 +43,46 @@ pub struct Approval {
     pub expires_at: i64,
 }
 
+/// User preferences. Defaults mirror the reference UI; every value applies to
+/// a real capability, so there are no decorative switches here.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Settings {
+    /// `system`, `light` or `dark`.
+    pub appearance: String,
+    /// `zh` for now.
+    pub locale: String,
+    /// Terminal font family; empty means the platform monospace default.
+    pub terminal_font: String,
+    /// Terminal font size in points.
+    pub terminal_font_size: u16,
+    /// Seconds between monitor samples.
+    pub monitor_interval: u64,
+    /// SSH connect timeout in seconds.
+    pub connect_timeout: u64,
+    /// Ask before closing a live session.
+    pub confirm_close: bool,
+    /// Keep this many recent hosts.
+    pub recent_limit: usize,
+    /// Open a shell as soon as a host connects.
+    pub auto_shell: bool,
+}
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            appearance: "light".to_owned(),
+            locale: "zh".to_owned(),
+            terminal_font: String::new(),
+            terminal_font_size: 13,
+            monitor_interval: 10,
+            connect_timeout: 10,
+            confirm_close: true,
+            recent_limit: 10,
+            auto_shell: true,
+        }
+    }
+}
+
 /// Everything the app remembers between launches.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StoreData {
@@ -54,6 +94,9 @@ pub struct StoreData {
     pub projects: BTreeMap<String, ProjectRecord>,
     /// Flow executions, newest last.
     pub runs: Vec<FlowRun>,
+    /// User preferences; files written before settings were added still load.
+    #[serde(default)]
+    pub settings: Settings,
 }
 
 /// A loaded [`StoreData`] plus where it came from.
@@ -67,6 +110,9 @@ pub struct Store {
 impl Store {
     /// `<data dir>/adash/state.json`.
     pub fn default_path() -> PathBuf {
+        if let Ok(dir) = std::env::var("ADASH_DATA_DIR") {
+            return PathBuf::from(dir).join("state.json");
+        }
         dirs::data_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("adash/state.json")

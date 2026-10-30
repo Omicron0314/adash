@@ -91,10 +91,15 @@ impl PlanAction {
     pub fn summary(&self) -> String {
         let verb = self.verb.label();
         let kind = self.kind.label();
+        let where_ = if self.region.is_empty() {
+            String::new()
+        } else {
+            format!(" @ {}", self.region)
+        };
         match (&self.resource, self.spec.is_empty()) {
-            (Some(resource), _) => format!("{verb} {kind} {} @ {}", resource.id, self.region),
-            (None, false) => format!("{verb} {kind} {} @ {}", self.spec, self.region),
-            (None, true) => format!("{verb} {kind} @ {}", self.region),
+            (Some(resource), _) => format!("{verb} {kind} {}{where_}", resource.id),
+            (None, false) => format!("{verb} {kind} {}{where_}", self.spec),
+            (None, true) => format!("{verb} {kind}{where_}"),
         }
     }
 }

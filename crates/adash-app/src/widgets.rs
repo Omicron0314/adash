@@ -16,7 +16,10 @@ pub fn stat_card(
     value: String,
     caption: Option<String>,
 ) -> AnyElement {
-    MaterialCard::new(id, CardVariant::Filled)
+    CardSurface::new(CardVariant::Filled)
+        .id(id)
+        .bg(color(ColorRole::SURFACE_CONTAINER_LOWEST))
+        .rounded(rem(24.))
         .flex()
         .flex_col()
         .gap(rem(6.))
@@ -40,6 +43,113 @@ pub fn stat_card(
                 .text_color(color(ColorRole::ON_SURFACE_VARIANT))
                 .child(caption)
         }))
+        .into_any_element()
+}
+
+/// Product emblem with the same rounded tile geometry as neko's server cards.
+pub fn resource_icon(kind: adash_core::resource::ResourceKind) -> AnyElement {
+    use adash_core::resource::ResourceKind;
+    let symbol = match kind {
+        ResourceKind::UHost => "dns",
+        ResourceKind::Eip => "language",
+        ResourceKind::Disk => "hard_drive",
+        ResourceKind::Udb => "database",
+        ResourceKind::Redis => "memory",
+        ResourceKind::Ulb => "hub",
+        _ => "cloud",
+    };
+    div()
+        .size(rem(48.))
+        .rounded(rem(16.))
+        .bg(color(ColorRole::PRIMARY_CONTAINER))
+        .text_color(color(ColorRole::ON_PRIMARY_CONTAINER))
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(
+            gpui_kit_material::icons::Icon::new(
+                gpui_kit_material::icons::Symbol::named(symbol)
+                    .expect("bundled product symbol")
+                    .icon()
+                    .asset_path(),
+            )
+            .size(rem(24.)),
+        )
+        .into_any_element()
+}
+
+/// An M3 rounded single-line field. Kit's `Input` owns editing, selection,
+/// clipboard, IME and the caret; this only supplies the chrome, so every field
+/// in the app shares one shape instead of the kit's 4dp text-field corners.
+pub fn rounded_input(
+    id: impl Into<ElementId>,
+    state: &Entity<gpui::base::input::InputState>,
+    label: Option<&'static str>,
+) -> AnyElement {
+    let mut input = gpui_kit::component::input::Input::new(state)
+        .appearance(false)
+        .p_0()
+        .text_size(rem(15.));
+    if let Some(label) = label {
+        input = input.aria_label(label);
+    }
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .h(px(48.))
+        .px(rem(16.))
+        .rounded(rem(24.))
+        .bg(color(ColorRole::SURFACE_CONTAINER_HIGH))
+        .border_1()
+        .border_color(color(ColorRole::SURFACE_CONTAINER_HIGH))
+        .child(div().flex_1().min_w_0().child(input))
+        .into_any_element()
+}
+
+/// The multi-line counterpart: same surface, a 20dp radius, and the kit
+/// textarea for editing.
+pub fn rounded_area(
+    id: impl Into<ElementId>,
+    state: &Entity<gpui::base::input::TextareaState>,
+    label: Option<&'static str>,
+) -> AnyElement {
+    let mut area = gpui_kit::component::input::Textarea::new(state)
+        .appearance(false)
+        .p_0()
+        .text_size(rem(14.));
+    if let Some(label) = label {
+        area = area.aria_label(label);
+    }
+    div()
+        .id(id)
+        .flex()
+        .p(rem(14.))
+        .rounded(rem(20.))
+        .bg(color(ColorRole::SURFACE_CONTAINER_HIGH))
+        .child(div().flex_1().min_w_0().child(area))
+        .into_any_element()
+}
+
+/// A labelled rounded field for forms: the label sits above, the field itself
+/// stays a clean pill so it reads the same as the composer.
+pub fn labelled_input(
+    id: &'static str,
+    label: &'static str,
+    state: &Entity<gpui::base::input::InputState>,
+) -> AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(rem(6.))
+        .child(
+            div()
+                .text_size(TEXT_AUX)
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(color(ColorRole::ON_SURFACE_VARIANT))
+                .child(label),
+        )
+        .child(rounded_input(id, state, Some(label)))
         .into_any_element()
 }
 
@@ -82,8 +192,8 @@ pub fn kv_row(label: impl Into<SharedString>, value: impl Into<SharedString>) ->
 pub fn state_dot(state: adash_core::ResourceState) -> AnyElement {
     use adash_core::ResourceState;
     let role = match state {
-        ResourceState::Running => ColorRole::TERTIARY,
-        ResourceState::Stopped => ColorRole::OUTLINE,
+        ResourceState::Running => ColorRole::SUCCESS,
+        ResourceState::Stopped | ResourceState::Available => ColorRole::OUTLINE,
         ResourceState::Pending => ColorRole::SECONDARY,
         ResourceState::Error => ColorRole::ERROR,
         ResourceState::Released => ColorRole::OUTLINE_VARIANT,

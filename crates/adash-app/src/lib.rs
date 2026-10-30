@@ -9,6 +9,8 @@ extern crate gpui_kit as gpui;
 pub mod agent;
 pub mod app;
 pub mod i18n;
+pub mod palette;
+pub mod ssh;
 pub mod views_flows;
 pub mod views_home;
 pub mod views_resources;

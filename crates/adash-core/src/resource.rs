@@ -117,10 +117,13 @@ impl std::fmt::Display for ResourceId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ResourceState {
-    /// Running / available.
+    /// Running, or in use (a bound EIP, an attached disk).
     Running,
-    /// Stopped but still billed (disks, IPs, stopped hosts).
+    /// Powered off but still billed.
     Stopped,
+    /// Allocated and billable, but not attached to anything (free EIP,
+    /// unattached disk). This is what the optimizer looks for.
+    Available,
     /// Being created, started or stopped.
     Pending,
     /// Failed and needs attention.
@@ -133,8 +136,9 @@ impl ResourceState {
     /// Map a UCloud state string (case-insensitive) onto our vocabulary.
     pub fn from_ucloud(raw: &str) -> Self {
         match raw.trim().to_ascii_lowercase().as_str() {
-            "running" | "available" | "used" | "normal" | "inuse" => Self::Running,
-            "stopped" | "shutdown" | "free" | "unbind" | "unattached" => Self::Stopped,
+            "running" | "used" | "normal" | "inuse" => Self::Running,
+            "available" | "free" | "unbind" | "unattached" => Self::Available,
+            "stopped" | "shutdown" => Self::Stopped,
             "" => Self::Pending,
             value if value.contains("fail") => Self::Error,
             "terminated" | "deleted" | "released" => Self::Released,
@@ -147,6 +151,7 @@ impl ResourceState {
         match self {
             Self::Running => "运行中",
             Self::Stopped => "已停止",
+            Self::Available => "未使用",
             Self::Pending => "处理中",
             Self::Error => "异常",
             Self::Released => "已释放",

@@ -24,21 +24,23 @@ docs/
   ARCHITECTURE.md            crate 职责、数据流、三个页面的数据从哪来
   UI.md                      设计语言、页面布局、组件映射、动效与文案
   API.md                     UCloud 接口清单、签名、Mock 与脱敏
-  ROADMAP.md                 M0–M5 里程碑与验收
+  ROADMAP.md                 M0–M6 里程碑与验收
   MANUAL_TESTS.md            人工测试清单
   DEMO.md                    演示剧本
   decisions/0001-*.md        ADR：沿用 catussh 外壳
   decisions/0002-*.md        ADR：AI 流程页只读、数据来自领域层
   design/neko.html           视觉参考（只读）
-  screenshots/               overview/resources/flows 截图
+  screenshots/               主页/资源/主机/设置/流程截图
 crates/
   ucloud-api/                唯一 UCloud 客户端（签名/传输/模型/Mock）
   adash-core/                领域层（资源/项目/流程/预算/计划/状态）
   adash-tool/                代理唯一执行面（JSON CLI）
-  pi-rpc/                    pi --mode rpc 客户端
+  agent-sdk/                 内置 pi SDK 宿主的 JSONL 边界
+  adash-ssh/                 SSH/SFTP/PTY/监控/端口转发
   adash-app/                 GPUI 应用（app/ views/ widgets/ agent/ i18n）
 agent/
   prompts/system.md          追加系统提示
+  runtime/                   pi SDK 宿主（createAgentSession）
   extensions/ucloud/         pi 扩展：ucloud_* 工具
   skills/                    按需加载的领域知识
 fixtures/mock/               Mock 账户数据（demo/测试/截图共用）

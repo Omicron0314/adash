@@ -20,7 +20,7 @@ pub mod nav {
     /// Settings.
     pub const SETTINGS: &str = "设置";
     /// Group header above host sessions.
-    pub const HOSTS: &str = "连接主机";
+    pub const HOSTS: &str = "主机";
     /// SSH identities (M6).
     pub const IDENTITIES: &str = "身份";
     /// Reusable command snippets (M6).
@@ -81,7 +81,31 @@ pub mod empty {
     pub const NO_SESSION: &str = "从「云资源」里选一台主机，打开终端。";
 }
 
+/// Home welcome and quick questions.
+pub mod home {
+    pub const EYEBROW: &str = "ADASH · 云端工作空间";
+    pub const TITLE: &str = "云上的事，交给我";
+    pub const SUBTITLE: &str = "查看资源、梳理服务，或为下一个项目做好计划。";
+    pub const INVENTORY: &str = "盘点云资源";
+    pub const SAVINGS: &str = "寻找省钱机会";
+    pub const FLOW: &str = "查看项目流程 →";
+    pub const INVENTORY_QUESTION: &str = "有哪些云资源？";
+    pub const SAVINGS_QUESTION: &str = "有浪费的钱吗？";
+}
+
+/// Flow inspector and connection legend.
+pub mod flow {
+    pub const NODE_DETAILS: &str = "节点详情";
+    pub const PROJECT_OVERVIEW: &str = "项目概览";
+    pub const VIEW_RESOURCE: &str = "在云资源中查看";
+    pub const NODES: &str = "节点";
+    pub const CONNECTIONS: &str = "连接";
+    pub const RUNS: &str = "执行记录";
+    pub const SELECT_HINT: &str = "点击画布中的服务，查看节点详情。";
+    pub const LEGEND: &str = "实线：资源绑定或声明\n虚线：推断关系\n紫色：当前回放路径";
+}
+
 /// Chat placeholders.
-pub const INPUT_PLACEHOLDER: &str = "问我：这个项目用了哪些服务？/ 有浪费的钱吗？";
+pub const INPUT_PLACEHOLDER: &str = "问我：这个项目用了哪些服务？";
 /// Offline-mode banner.
 pub const OFFLINE_PREFIX: &str = "离线模式";

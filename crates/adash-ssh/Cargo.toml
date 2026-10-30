@@ -1,0 +1,21 @@
+[package]
+name = "adash-ssh"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ssh2 = "0.9"
+sha2 = "0.10"
+base64 = "0.22"
+vt100 = "0.16"
+keyring = { version = "3.6", features = ["sync-secret-service", "crypto-rust"] }
+zeroize = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3"

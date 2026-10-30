@@ -9,19 +9,23 @@
 │        │                        │                              │                          │
 │        └────────────── 共用 adash-core 领域类型 ────────────────┘                          │
 └───────────┬──────────────────────────────────────────────┬─────────────────────────────────┘
-            │ pi-rpc: JSONL over stdio                     │ 直接链接
+            │ agent-sdk: JSONL over stdio                  │ 直接链接
             ▼                                              ▼
-   pi --mode rpc（受限）                             ucloud-api（唯一客户端）
-     ├ agent/extensions/ucloud  (ucloud_* 工具)            │  签名 / 签名 v2 / 传输 / 模型
+   node agent/runtime（pi SDK createAgentSession）    ucloud-api（唯一客户端）
+     ├ agent/extensions/ucloud  (ucloud_* 工具)            │  签名 / 传输 / 模型
      ├ agent/skills/*                                      │  Mock 后端（fixtures/mock）
      └ spawns: adash-tool <cmd>  ────── JSON ──────────────┘
+
+   adash-ssh（独立 crate）← adash-app：russh/ssh2 传输、PTY、SFTP、监控、转发
 ```
 
 三条数据路径：
 
-1. **GUI 读**：`adash-app` → `ucloud-api`（read 接口）→ `adash-core` 归一化 → 三个页面。
-2. **代理做**：`pi` → TS 扩展 → `adash-tool` → `ucloud-api`/`adash-core` → JSON 回传。
+1. **GUI 读**：`adash-app` → `ucloud-api`（read 接口）→ `adash-core` 归一化 → 页面。
+2. **代理做**：SDK 宿主 → TS 扩展 → `adash-tool` → `ucloud-api`/`adash-core` → JSON 回传。
 3. **流程图画**：`adash-core::flow` 里的项目—资源关系与执行记录 → `adash-app` 渲染。模型不画图。
+4. **主机连接**：`adash-app` → `adash-ssh` 工作线程（SSH/SFTP/PTY/转发）→ 事件回到 UI 定时泵，
+   `ssh2::Session` 从不跨线程共享。
 
 ## crates
 
@@ -73,22 +77,37 @@
 `adash-tool` 自己读凭证、自己做脱敏；它的输出就是模型的输入，因此**默认短**：
 列表给摘要与计数，详情按 id 单查。
 
-### pi-rpc
+### agent-sdk 与 agent/runtime
 
-`pi --mode rpc` 子进程客户端：严格 LF 分帧 JSONL、命令/响应关联、事件流、
-extension UI 子协议（`confirm` 卡片）。GUI 侧只暴露「发一条用户消息」「订阅事件」「应答确认」。
+`agent/runtime` 是应用自带的 Node 宿主，用 pi SDK 的 `createAgentSession` 创建会话：
+`DefaultResourceLoader` 关闭标准发现（`noExtensions`/`noSkills`/`noContextFiles`），只加入本仓库的
+`ucloud_*` 扩展、skills 与追加系统提示；工具白名单固定为 10 个 `ucloud_*`，没有 shell/edit/write。
+宿主接收 `start` / `prompt` / `abort` / `set_model` / `ui_response` / `dispose`，输出 SDK 事件。
+扩展的 `ctx.ui.confirm` 以 `ui_request` 转发到 GUI，用户在计划卡片确认后回传 `ui_response`；
+GUI 写入一次性批准，`adash-tool apply` 再校验计划哈希、过期与批准，执行仍在 Rust。
+
+`crates/agent-sdk` 只负责进程生命周期、LF 分帧与事件分类；模型、会话、工具与流式输出都属于 SDK。
+
+### adash-ssh
+
+独立传输层：主机指纹（首次确认、变更拒绝，先于认证）、agent/密码/私钥认证（密钥环）、
+PTY + `vt100` 终端、SFTP 列表/读写/上传/下载/重命名/删除、`/proc` 监控采样、本地与远程端口转发。
+GUI 只通过请求/应答通道交互。集成测试 `crates/adash-ssh/tests/localhost.rs` 会启动一个临时的、
+仅监听回环的非特权 `sshd`，验证上述全部路径（`ADASH_SSH_INTEGRATION=1`）。
 
 ### adash-app
 
 | 模块 | 职责 |
 | --- | --- |
-| `app` | 外壳、路由、共享状态（`Page::{Home, Resources, Flows}`） |
+| `app` | 外壳、路由、共享状态（产品页、主机页、设置） |
 | `views/home` | 代理对话 + 账户概览卡片（余额、本月花费、资源计数、预算进度） |
 | `views/resources` | 资源清单：筛选、搜索、详情抽屉、复制 id / 打开控制台 |
 | `views/flows` | 流程图：节点画布、连线、执行回放、节点详情 |
 | `widgets` | kit 缺的薄组合件（概览卡片、资源行、流程节点、连线层） |
-| `agent` | pi 进程生命周期、消息流、计划卡片、工具调用折叠；pi 不可用时退化为本地应答 |
-| `views_sessions` | 「连接主机」：主机事实 + 终端/文件/监控三个面（SSH 传输 M6） |
+| `agent` | SDK host 生命周期、消息流、计划确认；host 不可用时退化为本地应答 |
+| `ssh` | 主机/身份/片段/转发状态、连接与终端生命周期、批处理 |
+| `palette` | neko 浅色/深色语义色板，供主题切换使用 |
+| `views_sessions` | 主机、身份、片段、端口转发与终端/文件/监控三个面 |
 | `i18n` | 全部用户可见文案 |
 
 ## 三个页面的数据来源

@@ -3,3 +3,4 @@ node_modules/
 .DS_Store
 .env
 *.local.json
+agent/runtime/dist/

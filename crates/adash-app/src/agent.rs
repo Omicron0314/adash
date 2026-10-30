@@ -1,13 +1,14 @@
-//! The conversation: pi over RPC when it is available, a local responder when
-//! it is not.
+//! The conversation: the embedded pi SDK host when it is available, a local
+//! responder when it is not.
 //!
-//! The local responder is not a fake model. It answers from the same domain data
-//! the pages render, and says so (`离线`), so a demo without a configured model
-//! still shows real numbers instead of pretending.
+//! The SDK host is `agent/runtime` (Node). It owns the session, model, tools and
+//! extension UI; this module only spawns it and turns its JSONL events into app
+//! state. The local responder answers from the same domain data and says so, so
+//! a missing model never leaves an empty bubble or invents numbers.
 
-use pi_rpc::{PiConfig, PiRecord, PiSession};
+use agent_sdk::{AgentEvent, AgentHost, HostConfig};
 use serde_json::Value;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Who said it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,11 +54,11 @@ impl ChatMessage {
     }
 }
 
-/// An extension asking the app to confirm a plan, delivered as
-/// `extension_ui_request` with `method: "confirm"`.
+/// An extension asking the app to confirm a plan, delivered as `ui_request`
+/// with `method: "confirm"`.
 #[derive(Debug, Clone)]
 pub struct ConfirmRequest {
-    /// The request id to answer.
+    /// Correlation id of the SDK dialog.
     pub request_id: String,
     /// The plan the agent wants to apply.
     pub plan_id: String,
@@ -65,235 +66,251 @@ pub struct ConfirmRequest {
 
 /// Where answers come from.
 pub enum Backend {
-    /// A live `pi --mode rpc` child.
-    Pi(Box<PiSession>),
-    /// Local responder, with the reason pi is unavailable.
+    /// The embedded pi SDK host.
+    Sdk(Box<AgentHost>),
+    /// Local responder, with the reason the SDK is unavailable.
     Offline(String),
 }
 
 /// Conversation + agent process state.
 pub struct Agent {
-    /// Live pi or the fallback.
+    /// The host or the fallback.
     pub backend: Backend,
-    /// A plan waiting for the user's click.
+    /// A plan waiting for the user.
     pub pending: Option<ConfirmRequest>,
     /// Whether a run is in flight.
     pub streaming: bool,
-    /// Tool calls seen in this run, for the status line.
+    /// One line of progress.
     pub status: Option<String>,
     /// Why the last prompt was refused (missing model key, provider error).
     pub failure: Option<String>,
+    /// Model reported by the SDK host.
+    pub model: Option<String>,
+    /// Tools the SDK session exposes, as reported at startup.
+    pub tools: Vec<String>,
 }
 
 impl Agent {
-    /// Connect to pi with the restricted configuration from AGENTS.md.
+    /// Start the embedded SDK host with the restricted resource set.
     ///
     /// On any failure the app stays usable: the reason is kept for the banner
     /// and the local responder takes over.
     pub fn connect() -> Self {
-        match Self::spawn_pi() {
-            Ok(session) => Self {
-                backend: Backend::Pi(Box::new(session)),
+        if std::env::var_os("ADASH_OFFLINE").is_some() {
+            return Self::offline("ADASH_OFFLINE 已启用".to_owned());
+        }
+        match Self::spawn_host() {
+            Ok(host) => Self {
+                backend: Backend::Sdk(Box::new(host)),
                 pending: None,
                 streaming: false,
-                status: None,
+                status: Some("正在启动代理…".to_owned()),
                 failure: None,
+                model: None,
+                tools: Vec::new(),
             },
-            Err(reason) => Self {
-                backend: Backend::Offline(reason),
-                pending: None,
-                streaming: false,
-                status: None,
-                failure: None,
-            },
+            Err(reason) => Self::offline(reason),
         }
     }
 
-    fn spawn_pi() -> Result<PiSession, String> {
-        let root = repo_root();
-        let extension = root.join("agent/extensions/ucloud");
-        let skills = root.join("agent/skills");
-        let prompt = root.join("agent/prompts/system.md");
-        if !extension.exists() {
-            return Err(format!("找不到扩展目录 {}", extension.display()));
+    fn offline(reason: String) -> Self {
+        Self {
+            backend: Backend::Offline(reason),
+            pending: None,
+            streaming: false,
+            status: None,
+            failure: None,
+            model: None,
+            tools: Vec::new(),
         }
+    }
 
-        let tool = std::env::var("ADASH_TOOL").unwrap_or_else(|_| {
-            // Same target dir as the app in a dev build.
-            root.join("target/debug/adash-tool").display().to_string()
-        });
-        if !std::path::Path::new(&tool).exists() {
+    fn spawn_host() -> Result<AgentHost, String> {
+        let root = repo_root();
+        let script = root.join("agent/runtime/dist/index.js");
+        if !script.exists() {
             return Err(format!(
-                "找不到 adash-tool（{tool}），先 cargo build -p adash-tool"
+                "找不到 SDK 宿主 {}，先运行 npm --prefix agent/runtime run build",
+                script.display()
             ));
         }
-
-        // `-ne`/`-ns` keep globally discovered extensions and skills out: the
-        // agent may only do what this repo's extension exposes (AGENTS.md §3).
-        let mut args = vec![
-            "--no-builtin-tools".to_owned(),
-            "-ne".to_owned(),
-            "-ns".to_owned(),
-            "-e".to_owned(),
-            extension.display().to_string(),
-            "--skill".to_owned(),
-            skills.display().to_string(),
-        ];
-        if prompt.exists() {
-            args.push("--append-system-prompt".to_owned());
-            args.push(prompt.display().to_string());
+        let extension = root.join("agent/extensions/ucloud/index.ts");
+        if !extension.exists() {
+            return Err(format!("找不到扩展 {}", extension.display()));
         }
-        let config = PiConfig {
-            args,
-            env: vec![("ADASH_TOOL".to_owned(), tool)],
-            ..PiConfig::default()
+        let tool = PathBuf::from(
+            std::env::var("ADASH_TOOL")
+                .unwrap_or_else(|_| root.join("target/debug/adash-tool").display().to_string()),
+        );
+        if !tool.exists() {
+            return Err(format!(
+                "找不到 adash-tool（{}），先 cargo build -p adash-tool",
+                tool.display()
+            ));
+        }
+        let session_dir = data_dir().map(|dir| dir.join("sessions"));
+        let config = HostConfig {
+            program: std::env::var("ADASH_NODE").unwrap_or_else(|_| "node".to_owned()),
+            script,
+            root,
+            tool,
+            model: std::env::var("ADASH_MODEL").ok(),
+            session_dir,
         };
-        PiSession::spawn(config).map_err(|error| format!("无法启动 pi：{error}"))
+        AgentHost::spawn(config).map_err(|error| format!("无法启动代理宿主：{error}"))
     }
 
-    /// Whether the model is available.
+    /// Whether the SDK host is running (not necessarily ready yet).
+    #[must_use]
     pub fn is_online(&self) -> bool {
-        matches!(self.backend, Backend::Pi(_))
+        matches!(self.backend, Backend::Sdk(_))
     }
 
     /// Why the app is offline.
+    #[must_use]
     pub fn offline_reason(&self) -> Option<&str> {
         match &self.backend {
             Backend::Offline(reason) => Some(reason),
-            Backend::Pi(_) => None,
+            Backend::Sdk(_) => None,
         }
     }
 
-    /// Send a prompt; returns the request id when pi accepted it.
-    pub fn prompt(&mut self, text: &str) -> Option<String> {
-        let Backend::Pi(session) = &mut self.backend else {
-            return None;
+    /// Send a prompt.
+    pub fn prompt(&mut self, text: &str) -> bool {
+        let Backend::Sdk(host) = &mut self.backend else {
+            return false;
         };
-        match session.prompt(text) {
-            Ok(id) => {
+        match host.prompt(text) {
+            Ok(()) => {
                 self.streaming = true;
                 self.status = Some("正在理解你的问题…".to_owned());
-                Some(id)
+                true
             }
             Err(error) => {
                 self.streaming = false;
                 self.status = Some(format!("发送失败：{error}"));
-                None
+                false
             }
         }
     }
 
-    /// Answer an extension confirm request.
-    pub fn answer_confirm(&mut self, request_id: &str, confirmed: bool) {
-        if let Backend::Pi(session) = &self.backend {
-            let _ = session.respond_confirm(request_id, confirmed);
+    pub fn answer_confirm(&mut self, id: &str, confirmed: bool) {
+        if let Backend::Sdk(host) = &self.backend {
+            let _ = host.confirm(id, confirmed);
         }
         self.pending = None;
     }
 
-    /// Drain whatever pi has said since last frame.
+    /// Tell the SDK session what the user decided, so the model can summarise
+    /// the real outcome instead of guessing. The GUI has already executed.
+    pub fn inform(&self, text: &str) {
+        if let Backend::Sdk(host) = &self.backend {
+            let _ = host.send(&serde_json::json!({"type": "follow_up", "message": text}));
+        }
+    }
+
+    /// Drain whatever the host has said since last frame.
     ///
     /// `text` receives streaming deltas; the returned value is `true` when the
     /// run finished (so the caller can stop polling).
     pub fn pump(&mut self, mut on_text: impl FnMut(&str), mut on_tool: impl FnMut(String)) -> bool {
-        let Backend::Pi(session) = &self.backend else {
+        let Backend::Sdk(host) = &self.backend else {
             return true;
         };
         let mut settled = false;
-        for record in session.try_poll() {
-            match record {
-                PiRecord::Response(value) => {
-                    if value.get("success").and_then(Value::as_bool) == Some(false) {
-                        // The app falls back to the local responder for this
-                        // turn instead of leaving an empty bubble behind.
-                        self.failure = Some(
-                            value
-                                .get("error")
-                                .and_then(Value::as_str)
-                                .unwrap_or("未知错误")
-                                .to_owned(),
-                        );
-                        settled = true;
-                    }
+        for event in host.try_poll() {
+            match event {
+                AgentEvent::StartupError(reason) => {
+                    self.failure = Some(reason);
+                    settled = true;
                 }
-                PiRecord::UiRequest(value) => {
+                AgentEvent::Ready(value) => {
+                    self.model = Some(format!(
+                        "{}/{}",
+                        value.get("provider").and_then(Value::as_str).unwrap_or(""),
+                        value.get("model").and_then(Value::as_str).unwrap_or("")
+                    ));
+                    self.tools = value
+                        .get("tools")
+                        .and_then(Value::as_array)
+                        .map(|tools| {
+                            tools
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .map(ToOwned::to_owned)
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    self.status = None;
+                }
+                AgentEvent::UiRequest(value) => {
                     let method = value.get("method").and_then(Value::as_str).unwrap_or("");
-                    if method == "confirm"
-                        && value.get("title").and_then(Value::as_str) == Some("adash:apply-plan")
-                    {
-                        let request_id = value
-                            .get("id")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_owned();
+                    if method == "confirm" {
                         let plan_id = value
                             .get("message")
                             .and_then(Value::as_str)
                             .unwrap_or_default()
                             .to_owned();
                         self.pending = Some(ConfirmRequest {
-                            request_id,
+                            request_id: value
+                                .get("id")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .to_owned(),
                             plan_id,
                         });
                         self.status = Some("等待你确认计划…".to_owned());
                     }
                 }
-                PiRecord::Event(value) => {
-                    let kind = value.get("type").and_then(Value::as_str).unwrap_or("");
-                    match kind {
-                        "message_update" => {
-                            let event = value.get("assistantMessageEvent").unwrap_or(&value);
-                            match event.get("type").and_then(Value::as_str) {
-                                Some("text_delta") => {
-                                    if let Some(delta) = event.get("delta").and_then(Value::as_str)
-                                    {
-                                        on_text(delta);
-                                    }
+                AgentEvent::Event(value) => match value.get("type").and_then(Value::as_str) {
+                    Some("message_update") => {
+                        let event = value.get("assistantMessageEvent").unwrap_or(&value);
+                        match event.get("type").and_then(Value::as_str) {
+                            Some("text_delta") => {
+                                if let Some(delta) = event.get("delta").and_then(Value::as_str) {
+                                    on_text(delta);
                                 }
-                                Some("toolcall_start") => {
-                                    let name = event
-                                        .get("toolName")
-                                        .and_then(Value::as_str)
-                                        .unwrap_or("tool");
-                                    self.status = Some(format!("调用 {name}…"));
-                                }
-                                _ => {}
                             }
+                            Some("toolcall_start") => {
+                                let name = event
+                                    .get("toolName")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or("tool");
+                                self.status = Some(format!("调用 {name}…"));
+                            }
+                            _ => {}
                         }
-                        "tool_execution_start" => {
-                            let name = value
-                                .get("toolName")
-                                .and_then(Value::as_str)
-                                .unwrap_or("tool");
-                            self.status = Some(format!("调用 {name}…"));
-                        }
-                        "tool_execution_end" => {
-                            let name = value
-                                .get("toolName")
-                                .and_then(Value::as_str)
-                                .unwrap_or("tool");
-                            let failed =
-                                value.get("isError").and_then(Value::as_bool) == Some(true);
-                            let millis = value.get("durationMs").and_then(Value::as_u64);
-                            let mark = if failed { "!" } else { "✓" };
-                            let timing = millis.map_or_else(String::new, |ms| format!(" · {ms}ms"));
-                            on_tool(format!("{mark} {name}{timing}"));
-                            self.status = Some(format!("{name} 完成"));
-                        }
-                        "agent_settled" | "agent_end" => {
-                            settled = true;
-                        }
-                        "error" => {
-                            let reason = value
-                                .get("error")
-                                .and_then(Value::as_str)
-                                .unwrap_or("模型出错");
-                            on_text(&format!("\n（{reason}）"));
-                            settled = true;
-                        }
-                        _ => {}
                     }
-                }
+                    Some("tool_execution_start") => {
+                        let name = value
+                            .get("toolName")
+                            .and_then(Value::as_str)
+                            .unwrap_or("tool");
+                        self.status = Some(format!("调用 {name}…"));
+                    }
+                    Some("tool_execution_end") => {
+                        let name = value
+                            .get("toolName")
+                            .and_then(Value::as_str)
+                            .unwrap_or("tool");
+                        let failed = value.get("isError").and_then(Value::as_bool) == Some(true);
+                        let millis = value.get("durationMs").and_then(Value::as_u64);
+                        let mark = if failed { "!" } else { "✓" };
+                        let timing = millis.map_or_else(String::new, |ms| format!(" · {ms}ms"));
+                        on_tool(format!("{mark} {name}{timing}"));
+                        self.status = Some(format!("{name} 完成"));
+                    }
+                    Some("agent_settled") => settled = true,
+                    Some("error") => {
+                        let reason = value
+                            .get("error")
+                            .and_then(Value::as_str)
+                            .unwrap_or("模型出错");
+                        self.failure = Some(reason.to_owned());
+                        settled = true;
+                    }
+                    _ => {}
+                },
             }
         }
         if settled {
@@ -305,18 +322,34 @@ impl Agent {
 
     /// Stop the current run.
     pub fn abort(&mut self) {
-        if let Backend::Pi(session) = &self.backend {
-            let _ = session.abort();
+        if let Backend::Sdk(host) = &self.backend {
+            let _ = host.abort();
         }
         self.streaming = false;
         self.status = None;
     }
 }
 
-/// The repository root, so pi can be pointed at this repo's extension and skills.
+/// The repository root, so the host can be pointed at this checkout.
+#[must_use]
 pub fn repo_root() -> PathBuf {
     if let Ok(root) = std::env::var("ADASH_ROOT") {
         return PathBuf::from(root);
     }
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+/// Where adash keeps state and SDK sessions.
+#[must_use]
+pub fn data_dir() -> Option<PathBuf> {
+    if let Ok(path) = std::env::var("ADASH_DATA_DIR") {
+        return Some(PathBuf::from(path));
+    }
+    dirs::data_dir().map(|dir| dir.join("adash"))
+}
+
+/// True when `path` looks like the built SDK host.
+#[must_use]
+pub fn is_host_script(path: &Path) -> bool {
+    path.file_name().and_then(|name| name.to_str()) == Some("index.js")
 }
