@@ -1,0 +1,58 @@
+{
+  "Action": "DescribeUHostInstance",
+  "RetCode": 0,
+  "Message": "",
+  "TotalCount": 3,
+  "UHostSet": [
+    {
+      "UHostId": "uhost-shopweb1",
+      "Name": "shop-api-web-1",
+      "State": "Running",
+      "Region": "cn-bj2",
+      "Zone": "cn-bj2-02",
+      "CPU": 2,
+      "Memory": 4096,
+      "UHostType": "N",
+      "ChargeType": "Month",
+      "Tag": "adash:shop-api",
+      "CreateTime": 1735689600,
+      "IPSet": [
+        { "IP": "10.10.1.11", "Type": "Internode" },
+        { "IP": "106.75.12.31", "Type": "Bgp" }
+      ]
+    },
+    {
+      "UHostId": "uhost-shopweb2",
+      "Name": "shop-api-web-2",
+      "State": "Running",
+      "Region": "cn-bj2",
+      "Zone": "cn-bj2-02",
+      "CPU": 2,
+      "Memory": 4096,
+      "UHostType": "N",
+      "ChargeType": "Month",
+      "Tag": "adash:shop-api",
+      "CreateTime": 1735776000,
+      "IPSet": [
+        { "IP": "10.10.1.12", "Type": "Internode" },
+        { "IP": "106.75.12.32", "Type": "Bgp" }
+      ]
+    },
+    {
+      "UHostId": "uhost-batch1",
+      "Name": "batch-worker-1",
+      "State": "Running",
+      "Region": "cn-sh2",
+      "Zone": "cn-sh2-01",
+      "CPU": 8,
+      "Memory": 16384,
+      "UHostType": "C",
+      "ChargeType": "Dynamic",
+      "Tag": "adash:batch",
+      "CreateTime": 1736294400,
+      "IPSet": [
+        { "IP": "10.20.4.21", "Type": "Internode" }
+      ]
+    }
+  ]
+}

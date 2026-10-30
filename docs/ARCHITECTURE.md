@@ -55,6 +55,7 @@
 | `budget` | 预算、已花费、预测月底、超支告警 |
 | `billing` | 账单明细归一化与按项目分摊 |
 | `plan` | `Plan { actions, monthly_delta, risks, reversible }` + 哈希 + 过期时间 |
+| `executor` | 执行已批准的计划（Mock 下记录执行并写入流程历史）；GUI 与 `adash-tool` 共用 |
 | `optimizer` | 闲置/超配/孤儿资源规则，产出带金额的建议 |
 | `state` | 本地持久化：项目、流程、计划、批准令牌（应用数据目录，0600） |
 
@@ -86,7 +87,8 @@ extension UI 子协议（`confirm` 卡片）。GUI 侧只暴露「发一条用�
 | `views/resources` | 资源清单：筛选、搜索、详情抽屉、复制 id / 打开控制台 |
 | `views/flows` | 流程图：节点画布、连线、执行回放、节点详情 |
 | `widgets` | kit 缺的薄组合件（概览卡片、资源行、流程节点、连线层） |
-| `agent` | pi 进程生命周期、消息流、计划卡片、工具调用折叠 |
+| `agent` | pi 进程生命周期、消息流、计划卡片、工具调用折叠；pi 不可用时退化为本地应答 |
+| `views_sessions` | 「连接主机」：主机事实 + 终端/文件/监控三个面（SSH 传输 M6） |
 | `i18n` | 全部用户可见文案 |
 
 ## 三个页面的数据来源
@@ -113,6 +115,13 @@ extension UI 子协议（`confirm` 卡片）。GUI 侧只暴露「发一条用�
   → adash-tool apply 校验 → 执行 → 验证 → 打标签 adash:<slug>
   → inventory 刷新 → 主页概览与「AI 流程」同时出现新节点
 ```
+
+## 代理不可用时的退化
+
+没有装 pi、模型没配好、或 `adash-tool` 不在 `target/debug` 时，应用不会变成空壳：
+`agent.rs` 会退化成**本地应答**——用同一份 `inventory` / `billing` / `flow` 数据回答
+「有哪些资源」「花了多少」「这个项目用了哪些服务」「有浪费吗」，并且每条消息都标注「离线模式」。
+它不会编造数据，也不会执行任何变更；离线时确认计划只记录执行，并明确说明没有创建资源。
 
 ## 威胁模型（demo 级）
 

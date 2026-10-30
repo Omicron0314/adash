@@ -1,0 +1,20 @@
+{
+  "Action": "DescribeUDBInstance",
+  "RetCode": 0,
+  "Message": "",
+  "TotalCount": 1,
+  "DataSet": [
+    {
+      "DBId": "udb-shopdb1",
+      "Name": "shop-api-db",
+      "State": "Running",
+      "DBType": "mysql",
+      "Region": "cn-bj2",
+      "Zone": "cn-bj2-02",
+      "DiskSpace": 50,
+      "ChargeType": "Month",
+      "CreateTime": 1735689600,
+      "Tag": "adash:shop-api"
+    }
+  ]
+}

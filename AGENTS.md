@@ -17,8 +17,10 @@ M3 Expressive 视觉来自 [neko.html](docs/design/neko.html)）：
 | **对话（主页）** | 以 pi 为底层的代理对话入口 + 账户整体概览卡片 | 一句话 → 计划卡片 → 确认 → 结果 |
 | **云资源** | 用户**已经创建**的资源清单（主机、EIP、云盘、数据库、Redis、US3…） | 筛选/搜索/详情/跳转 |
 | **AI 流程** | 参考 n8n 的只读流程图：**一个项目用了哪些服务**、怎么连的、这次部署/请求走了哪条路 | 节点、连线、执行回放 |
+| **连接主机**（分组） | 从「云资源」打开的主机会话（终端/文件/监控），以及身份、片段、端口转发 | 会话随主机出现，不抢首屏 |
 
-三个页面共用同一份领域数据：代理、概览卡片和流程图看到的资源必须是同一批。
+三个产品页共用同一份领域数据：代理、概览卡片和流程图看到的资源必须是同一批。
+「连接主机」分组是 catussh 能力的保留位置：会话外壳已经可用，SSH 传输在 M6 落地。
 
 产品原则，冲突时按顺序取舍：
 
@@ -34,7 +36,7 @@ Rust workspace，GPUI 桌面应用，Material 3 Expressive 组件来自
 | 路径 | 语言 | 职责 |
 | --- | --- | --- |
 | `crates/ucloud-api` | Rust | **唯一的** UCloud OpenAPI 客户端：签名、传输、类型化响应、Mock 后端 |
-| `crates/adash-core` | Rust | 领域层：统一资源模型、项目、流程（Flow）、预算/花费、计划(Plan)、本地状态 |
+| `crates/adash-core` | Rust | 领域层：统一资源模型、项目、流程（Flow）、预算/花费、计划(Plan)、执行器、本地状态 |
 | `crates/adash-tool` | Rust（bin） | 给 pi 扩展调用的 JSON CLI，代理**唯一的**执行面 |
 | `crates/pi-rpc` | Rust | `pi --mode rpc` 子进程客户端（JSONL over stdio、事件流、extension UI） |
 | `crates/adash-app` | Rust（bin） | GPUI 应用：外壳/路由、三个页面、M3 组件组合 |

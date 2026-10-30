@@ -1,0 +1,34 @@
+{
+  "Action": "DescribeULB",
+  "RetCode": 0,
+  "Message": "",
+  "TotalCount": 1,
+  "DataSet": [
+    {
+      "ULBId": "ulb-shopapi1",
+      "Name": "shop-api-lb",
+      "Region": "cn-bj2",
+      "CreateTime": 1735689600,
+      "VServerSet": [
+        {
+          "VServerId": "vserver-https",
+          "Protocol": "HTTPS",
+          "FrontendPort": 443,
+          "BackendSet": [
+            {
+              "ResourceId": "uhost-shopweb1",
+              "ResourceType": "UHost",
+              "Port": 8080
+            },
+            {
+              "ResourceId": "uhost-shopweb2",
+              "ResourceType": "UHost",
+              "Port": 8080
+            }
+          ]
+        }
+      ],
+      "Tag": "adash:shop-api"
+    }
+  ]
+}

@@ -9,4 +9,5 @@ publish.workspace = true
 [dependencies]
 ucloud-api.workspace = true
 adash-core.workspace = true
+serde.workspace = true
 serde_json.workspace = true

@@ -1,0 +1,44 @@
+{
+  "Action": "DescribeEIP",
+  "RetCode": 0,
+  "Message": "",
+  "TotalCount": 3,
+  "EIPSet": [
+    {
+      "EIPId": "eip-shopweb1",
+      "Name": "shop-api-web-1-eip",
+      "IP": "106.75.12.31",
+      "State": "used",
+      "Region": "cn-bj2",
+      "Bandwidth": 5,
+      "PayMode": "Month",
+      "Tag": "adash:shop-api",
+      "CreateTime": 1735689600,
+      "Resource": { "ResourceId": "uhost-shopweb1", "ResourceType": "uhost" }
+    },
+    {
+      "EIPId": "eip-shopweb2",
+      "Name": "shop-api-web-2-eip",
+      "IP": "106.75.12.32",
+      "State": "used",
+      "Region": "cn-bj2",
+      "Bandwidth": 5,
+      "PayMode": "Month",
+      "Tag": "adash:shop-api",
+      "CreateTime": 1735776000,
+      "Resource": { "ResourceId": "uhost-shopweb2", "ResourceType": "uhost" }
+    },
+    {
+      "EIPId": "eip-orphan1",
+      "Name": "old-demo-eip",
+      "IP": "106.75.40.88",
+      "State": "free",
+      "Region": "cn-bj2",
+      "Bandwidth": 10,
+      "PayMode": "Dynamic",
+      "Tag": "",
+      "CreateTime": 1738368000,
+      "Resource": null
+    }
+  ]
+}

@@ -23,6 +23,9 @@ pub enum Error {
     /// Mock backend had no fixture for this call.
     #[error("mock: {0}")]
     Mock(String),
+    /// The call needs a feature this demo does not implement yet.
+    #[error("unsupported: {0}")]
+    Unsupported(String),
 }
 
 /// Crate-local result alias.

@@ -1,0 +1,30 @@
+{
+  "Action": "DescribeUDisk",
+  "RetCode": 0,
+  "Message": "",
+  "TotalCount": 2,
+  "DataSet": [
+    {
+      "UDiskId": "udisk-shopdata1",
+      "Name": "shop-api-web-1-data",
+      "Size": 100,
+      "Status": "InUse",
+      "Region": "cn-bj2",
+      "Zone": "cn-bj2-02",
+      "UHostId": "uhost-shopweb1",
+      "CreateTime": 1735689600,
+      "Tag": "adash:shop-api"
+    },
+    {
+      "UDiskId": "udisk-orphan1",
+      "Name": "temp-import-disk",
+      "Size": 200,
+      "Status": "Available",
+      "Region": "cn-bj2",
+      "Zone": "cn-bj2-02",
+      "UHostId": "",
+      "CreateTime": 1738368000,
+      "Tag": ""
+    }
+  ]
+}

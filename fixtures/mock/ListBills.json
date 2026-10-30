@@ -1,0 +1,64 @@
+{
+  "Action": "ListBills",
+  "RetCode": 0,
+  "Message": "",
+  "TotalCount": 8,
+  "Bills": [
+    {
+      "Amount": 186.4,
+      "ResourceId": "uhost-shopweb1",
+      "Product": "UHost",
+      "Date": "2025-10-01",
+      "ProjectId": "org-demo"
+    },
+    {
+      "Amount": 186.4,
+      "ResourceId": "uhost-shopweb2",
+      "Product": "UHost",
+      "Date": "2025-10-01",
+      "ProjectId": "org-demo"
+    },
+    {
+      "Amount": 340.2,
+      "ResourceId": "uhost-batch1",
+      "Product": "UHost",
+      "Date": "2025-10-01",
+      "ProjectId": "org-demo"
+    },
+    {
+      "Amount": 98.0,
+      "ResourceId": "udb-shopdb1",
+      "Product": "UDB",
+      "Date": "2025-10-01",
+      "ProjectId": "org-demo"
+    },
+    {
+      "Amount": 76.5,
+      "ResourceId": "umem-shopcache1",
+      "Product": "UMem",
+      "Date": "2025-10-01",
+      "ProjectId": "org-demo"
+    },
+    {
+      "Amount": 24.0,
+      "ResourceId": "eip-shopweb1",
+      "Product": "UNet",
+      "Date": "2025-10-01",
+      "ProjectId": "org-demo"
+    },
+    {
+      "Amount": 24.0,
+      "ResourceId": "eip-shopweb2",
+      "Product": "UNet",
+      "Date": "2025-10-01",
+      "ProjectId": "org-demo"
+    },
+    {
+      "Amount": 48.0,
+      "ResourceId": "eip-orphan1",
+      "Product": "UNet",
+      "Date": "2025-10-01",
+      "ProjectId": "org-demo"
+    }
+  ]
+}

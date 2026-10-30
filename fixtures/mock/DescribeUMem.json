@@ -1,0 +1,19 @@
+{
+  "Action": "DescribeUMem",
+  "RetCode": 0,
+  "Message": "",
+  "TotalCount": 1,
+  "DataSet": [
+    {
+      "InstanceId": "umem-shopcache1",
+      "Name": "shop-api-cache",
+      "State": "Running",
+      "Region": "cn-bj2",
+      "Zone": "cn-bj2-02",
+      "Size": 2048,
+      "ChargeType": "Month",
+      "CreateTime": 1735689600,
+      "Tag": "adash:shop-api"
+    }
+  ]
+}

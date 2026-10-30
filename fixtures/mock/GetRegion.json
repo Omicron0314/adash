@@ -1,0 +1,11 @@
+{
+  "Action": "GetRegion",
+  "RetCode": 0,
+  "Message": "",
+  "Regions": [
+    { "RegionId": "cn-bj2", "Region": "北京二" },
+    { "RegionId": "cn-sh2", "Region": "上海二" },
+    { "RegionId": "cn-gd", "Region": "广州" },
+    { "RegionId": "hk", "Region": "香港" }
+  ]
+}
