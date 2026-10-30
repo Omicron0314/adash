@@ -18,11 +18,16 @@ pub enum Page {
     Resources,
     /// AI flows: which services a project uses, drawn as a graph.
     Flows,
+    /// Credentials, theme, language; pinned to the bottom of the sidebar.
+    Settings,
 }
 
 impl Page {
-    /// Sidebar order.
-    pub const ALL: [Self; 3] = [Self::Home, Self::Resources, Self::Flows];
+    /// Sidebar order; `Settings` is rendered separately, below the spacer.
+    pub const ALL: [Self; 4] = [Self::Home, Self::Resources, Self::Flows, Self::Settings];
+
+    /// Product pages, i.e. everything except `Settings`.
+    pub const PAGES: [Self; 3] = [Self::Home, Self::Resources, Self::Flows];
 
     /// Stable id for element ids and tests.
     pub fn id(self) -> &'static str {
@@ -30,6 +35,7 @@ impl Page {
             Self::Home => "home",
             Self::Resources => "resources",
             Self::Flows => "flows",
+            Self::Settings => "settings",
         }
     }
 
@@ -39,6 +45,7 @@ impl Page {
             Self::Home => Text::NavHome.zh(),
             Self::Resources => Text::NavResources.zh(),
             Self::Flows => Text::NavFlows.zh(),
+            Self::Settings => Text::NavSettings.zh(),
         }
     }
 
@@ -48,6 +55,7 @@ impl Page {
             Self::Home => "forum",
             Self::Resources => "dns",
             Self::Flows => "account_tree",
+            Self::Settings => "settings",
         }
     }
 }
@@ -144,37 +152,48 @@ impl Adash {
             .border_color(color(ColorRole::OUTLINE_VARIANT))
             .bg(color(ColorRole::SURFACE_CONTAINER_LOW));
 
-        for page in Page::ALL {
-            let selected = page == self.page;
-            rail = rail.child(
-                div()
-                    .id(SharedString::from(page.id()))
-                    .flex()
-                    .items_center()
-                    .gap(rem(12.))
-                    .h(px(44.))
-                    .px(rem(14.))
-                    .rounded(rem(22.))
-                    .cursor_pointer()
-                    .when(selected, |this| {
-                        this.bg(color(ColorRole::SECONDARY_CONTAINER))
-                            .text_color(color(ColorRole::ON_SECONDARY_CONTAINER))
-                    })
-                    .hover(|this| this.bg(color(ColorRole::SURFACE_CONTAINER_HIGH)))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.page = page;
-                        cx.notify();
-                    }))
-                    .child(
-                        div()
-                            .text_size(TEXT_BODY)
-                            .font_weight(FontWeight::MEDIUM)
-                            .child(page.label()),
-                    ),
-            );
+        for page in Page::PAGES {
+            rail = rail.child(self.nav_item(page, cx));
         }
 
+        rail = rail.child(div().flex_1()).child(
+            div()
+                .pt(rem(8.))
+                .border_t_1()
+                .border_color(color(ColorRole::OUTLINE_VARIANT))
+                .child(self.nav_item(Page::Settings, cx)),
+        );
+
         rail.into_any_element()
+    }
+
+    fn nav_item(&self, page: Page, cx: &mut Context<Self>) -> AnyElement {
+        let selected = page == self.page;
+        div()
+            .id(SharedString::from(page.id()))
+            .flex()
+            .items_center()
+            .gap(rem(12.))
+            .h(px(44.))
+            .px(rem(14.))
+            .rounded(rem(22.))
+            .cursor_pointer()
+            .when(selected, |this| {
+                this.bg(color(ColorRole::SECONDARY_CONTAINER))
+                    .text_color(color(ColorRole::ON_SECONDARY_CONTAINER))
+            })
+            .hover(|this| this.bg(color(ColorRole::SURFACE_CONTAINER_HIGH)))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.page = page;
+                cx.notify();
+            }))
+            .child(
+                div()
+                    .text_size(TEXT_BODY)
+                    .font_weight(FontWeight::MEDIUM)
+                    .child(page.label()),
+            )
+            .into_any_element()
     }
 }
 

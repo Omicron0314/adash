@@ -11,6 +11,8 @@ pub enum Text {
     NavResources,
     /// `AI 流程`
     NavFlows,
+    /// `设置`
+    NavSettings,
 }
 
 impl Text {
@@ -22,6 +24,7 @@ impl Text {
             Self::NavHome => "对话",
             Self::NavResources => "云资源",
             Self::NavFlows => "AI 流程",
+            Self::NavSettings => "设置",
         }
     }
 }
