@@ -1,0 +1,5 @@
+[toolchain]
+# Same toolchain as third_party/gpui-kit-material; bump together.
+channel = "1.99.1"
+profile = "minimal"
+components = ["clippy", "rustfmt"]
