@@ -81,6 +81,8 @@ pub struct Agent {
     pub streaming: bool,
     /// Tool calls seen in this run, for the status line.
     pub status: Option<String>,
+    /// Why the last prompt was refused (missing model key, provider error).
+    pub failure: Option<String>,
 }
 
 impl Agent {
@@ -95,12 +97,14 @@ impl Agent {
                 pending: None,
                 streaming: false,
                 status: None,
+                failure: None,
             },
             Err(reason) => Self {
                 backend: Backend::Offline(reason),
                 pending: None,
                 streaming: false,
                 status: None,
+                failure: None,
             },
         }
     }
@@ -124,8 +128,12 @@ impl Agent {
             ));
         }
 
+        // `-ne`/`-ns` keep globally discovered extensions and skills out: the
+        // agent may only do what this repo's extension exposes (AGENTS.md §3).
         let mut args = vec![
             "--no-builtin-tools".to_owned(),
+            "-ne".to_owned(),
+            "-ns".to_owned(),
             "-e".to_owned(),
             extension.display().to_string(),
             "--skill".to_owned(),
@@ -196,11 +204,15 @@ impl Agent {
             match record {
                 PiRecord::Response(value) => {
                     if value.get("success").and_then(Value::as_bool) == Some(false) {
-                        let error = value
-                            .get("error")
-                            .and_then(Value::as_str)
-                            .unwrap_or("未知错误");
-                        on_text(&format!("\n（pi 拒绝了这次请求：{error}）"));
+                        // The app falls back to the local responder for this
+                        // turn instead of leaving an empty bubble behind.
+                        self.failure = Some(
+                            value
+                                .get("error")
+                                .and_then(Value::as_str)
+                                .unwrap_or("未知错误")
+                                .to_owned(),
+                        );
                         settled = true;
                     }
                 }
