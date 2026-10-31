@@ -234,11 +234,19 @@ impl Adash {
             .child(
                 MaterialButton::new("chat-send")
                     .variant(ButtonVariant::Filled)
-                    .disabled(self.agent.streaming)
                     .on_click(cx.listener(|this, _, window, cx| {
-                        this.send_input(window, cx);
+                        if this.agent.streaming {
+                            this.agent.abort();
+                            cx.notify();
+                        } else {
+                            this.send_input(window, cx);
+                        }
                     }))
-                    .child(action::SEND),
+                    .child(if self.agent.streaming {
+                        "停止"
+                    } else {
+                        action::SEND
+                    }),
             )
             .into_any_element()
     }

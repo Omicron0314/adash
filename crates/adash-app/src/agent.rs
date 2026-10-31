@@ -323,10 +323,16 @@ impl Agent {
     /// Stop the current run.
     pub fn abort(&mut self) {
         if let Backend::Sdk(host) = &self.backend {
-            let _ = host.abort();
+            if let Err(error) = host.abort() {
+                self.failure = Some(error.to_string());
+                self.streaming = false;
+            } else {
+                self.status = Some("正在停止…".into());
+            }
+        } else {
+            self.streaming = false;
+            self.status = None;
         }
-        self.streaming = false;
-        self.status = None;
     }
 }
 

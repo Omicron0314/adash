@@ -3,7 +3,7 @@
 
 use crate::app::{Adash, Page};
 use crate::widgets;
-use adash_ssh::{ForwardDirection, IdentityKind, RemoteFile};
+use adash_ssh::{ForwardDirection, IdentityKind};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_kit_material::prelude::*;
@@ -48,6 +48,7 @@ impl Adash {
             let id = host.id.clone();
             let id_open = id.clone();
             let id_delete = id.clone();
+            let id_edit = id.clone();
             let select_id = id.clone();
             let selected = self.selected_hosts.contains(&id);
             let identity = host
@@ -58,7 +59,7 @@ impl Adash {
             let open = self
                 .sessions
                 .iter()
-                .position(|session| session.host.id == id);
+                .position(|session| !session.closed && session.host.id == id);
             list = list.child(
                 CardSurface::new(CardVariant::Filled)
                     .bg(color(ColorRole::SURFACE_CONTAINER_LOWEST))
@@ -118,6 +119,13 @@ impl Adash {
                                 }),
                             ))
                             .child(widgets::text_button(
+                                format!("edit-{id}"),
+                                "编辑",
+                                cx.listener(move |this, _, window, cx| {
+                                    this.edit_host(&id_edit, window, cx)
+                                }),
+                            ))
+                            .child(widgets::text_button(
                                 format!("delete-{id}"),
                                 "删除",
                                 cx.listener(move |this, _, _, cx| this.delete_host(&id_delete, cx)),
@@ -126,10 +134,47 @@ impl Adash {
             );
         }
 
+        let mut identities = div().flex().gap(rem(8.)).flex_wrap();
+        for (identity, title) in std::iter::once((None, "SSH agent".to_owned())).chain(
+            self.profiles
+                .data
+                .identities
+                .values()
+                .map(|identity| (Some(identity.id.clone()), identity.name.clone())),
+        ) {
+            let selected = self.host_form.identity == identity;
+            identities = identities.child(widgets::chip(
+                SharedString::from(format!(
+                    "host-identity-{}",
+                    identity.as_deref().unwrap_or("agent")
+                )),
+                title,
+                selected,
+                cx.listener(move |this, next: &bool, window, cx| {
+                    if *next {
+                        this.host_form.identity = identity.clone();
+                        this.host_form
+                            .key_path
+                            .update(cx, |state, cx| state.set_value("", window, cx));
+                        this.host_form
+                            .secret
+                            .update(cx, |state, cx| state.set_value("", window, cx));
+                    }
+                    cx.notify();
+                }),
+            ));
+        }
         let form = div()
             .flex()
             .flex_col()
             .gap(rem(12.))
+            .child(
+                div()
+                    .text_size(TEXT_AUX)
+                    .text_color(color(ColorRole::ON_SURFACE_VARIANT))
+                    .child("登录身份"),
+            )
+            .child(identities)
             .child(
                 div()
                     .flex()
@@ -164,10 +209,21 @@ impl Adash {
                     ))
                     .child(widgets::filled_button(
                         "add-host",
-                        "保存主机",
+                        if self.host_form.editing.is_some() {
+                            "保存修改"
+                        } else {
+                            "保存主机"
+                        },
                         cx.listener(|this, _, window, cx| this.add_host(window, cx)),
                     )),
-            );
+            )
+            .children(self.host_form.editing.as_ref().map(|_| {
+                widgets::text_button(
+                    "cancel-host-edit",
+                    "取消编辑",
+                    cx.listener(|this, _, window, cx| this.cancel_host_edit(window, cx)),
+                )
+            }));
 
         div()
             .id("hosts-scroll")
@@ -198,7 +254,11 @@ impl Adash {
                         div()
                             .text_size(rem(20.))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .child("添加主机"),
+                            .child(if self.host_form.editing.is_some() {
+                                "编辑主机"
+                            } else {
+                                "添加主机"
+                            }),
                     )
                     .child(form),
             )
@@ -440,7 +500,23 @@ impl Adash {
                             .child("添加片段"),
                     )
                     .child(field("snippet-name", "名称", &self.snippet_form.name))
-                    .child(field("snippet-command", "命令", &self.snippet_form.command))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(rem(6.))
+                            .child(div().text_size(TEXT_AUX).child("命令"))
+                            .child(widgets::rounded_area_with_font(
+                                "snippet-command",
+                                &self.snippet_form.command,
+                                if self.store.data.settings.terminal_font.is_empty() {
+                                    "monospace".into()
+                                } else {
+                                    self.store.data.settings.terminal_font.clone().into()
+                                },
+                                f32::from(self.store.data.settings.terminal_font_size),
+                            )),
+                    )
                     .child(div().flex().justify_end().child(widgets::filled_button(
                         "add-snippet",
                         "保存片段",
@@ -510,13 +586,30 @@ impl Adash {
             let id = rule.id.clone();
             let delete_id = id.clone();
             let toggle_id = id.clone();
-            let running = if let Some(index) = self.active_session {
-                self.sessions.get(index).is_some_and(|session| {
-                    session.forward.is_some() && session.forward_rule.as_deref() == Some(&rule.id)
-                })
+            let target_host = rule.host_id.clone();
+            let target_session = if target_host.is_empty() {
+                self.active_session
             } else {
-                false
+                self.sessions
+                    .iter()
+                    .position(|session| !session.closed && session.host.id == target_host)
             };
+            let running = target_session
+                .and_then(|index| self.sessions.get(index))
+                .is_some_and(|session| session.forwards.contains_key(&id));
+            let starting = target_session
+                .and_then(|index| self.sessions.get(index))
+                .is_some_and(|session| session.forward_rx.contains_key(&id));
+            let error = target_session
+                .and_then(|index| self.sessions.get(index))
+                .and_then(|session| session.forward_errors.get(&id).cloned());
+            let host_name = self
+                .profiles
+                .data
+                .hosts
+                .get(&target_host)
+                .map_or("当前主机", |host| host.name.as_str())
+                .to_owned();
             list = list.child(
                 CardSurface::new(CardVariant::Filled)
                     .bg(color(ColorRole::SURFACE_CONTAINER_LOWEST))
@@ -542,19 +635,48 @@ impl Adash {
                                     .text_size(TEXT_AUX)
                                     .text_color(color(ColorRole::ON_SURFACE_VARIANT))
                                     .child(format!(
-                                        "127.0.0.1:{} → {}:{}",
-                                        rule.bind_port, rule.target_host, rule.target_port
+                                        "{} · {} · 127.0.0.1:{} → {}:{}",
+                                        host_name,
+                                        if rule.direction == ForwardDirection::Local {
+                                            "本地"
+                                        } else {
+                                            "远程"
+                                        },
+                                        rule.bind_port,
+                                        rule.target_host,
+                                        rule.target_port
                                     )),
-                            ),
+                            )
+                            .children(error.map(|error| {
+                                div()
+                                    .text_size(TEXT_AUX)
+                                    .text_color(color(ColorRole::ERROR))
+                                    .child(error)
+                            })),
                     )
                     .child(widgets::tonal_button(
                         format!("toggle-{id}"),
-                        if running { "停止" } else { "启动" },
-                        cx.listener(move |this, _, _, cx| {
-                            if let Some(index) = this.active_session {
-                                this.toggle_forward(index, &toggle_id, cx);
+                        if running {
+                            "停止"
+                        } else if starting {
+                            "取消启动"
+                        } else {
+                            "启动"
+                        },
+                        cx.listener(move |this, _, window, cx| {
+                            let index = if target_host.is_empty() {
+                                this.active_session
                             } else {
-                                this.notice = Some("先打开一台主机的会话".to_owned());
+                                this.sessions.iter().position(|session| {
+                                    !session.closed && session.host.id == target_host
+                                })
+                            };
+                            if let Some(index) = index {
+                                this.toggle_forward(index, &toggle_id, cx);
+                            } else if !target_host.is_empty() {
+                                this.open_host(&target_host, window, cx);
+                            } else {
+                                this.notice = Some("请选择转发连接的主机".into());
                                 cx.notify();
                             }
                         }),
@@ -585,6 +707,22 @@ impl Adash {
                 }),
             ));
         }
+        let mut host_choices = div().flex().flex_wrap().gap(rem(8.));
+        for host in self.profiles.data.hosts.values() {
+            let id = host.id.clone();
+            let selected = self.forward_form.host_id.as_ref() == Some(&id);
+            host_choices = host_choices.child(widgets::chip(
+                SharedString::from(format!("forward-target-{}", host.id)),
+                host.name.clone(),
+                selected,
+                cx.listener(move |this, next: &bool, _, cx| {
+                    if *next {
+                        this.forward_form.host_id = Some(id.clone());
+                    }
+                    cx.notify();
+                }),
+            ));
+        }
         div()
             .id("forward-scroll")
             .flex()
@@ -605,6 +743,8 @@ impl Adash {
                     .child(format!("当前会话：{name}"))
             }))
             .child(directions)
+            .child(div().text_size(TEXT_AUX).child("转发主机"))
+            .child(host_choices)
             .child(
                 CardSurface::new(CardVariant::Filled)
                     .bg(color(ColorRole::SURFACE_CONTAINER_LOWEST))
@@ -656,13 +796,13 @@ impl Adash {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let Some(session) = self.sessions.get(index) else {
+        let Some(session) = self.sessions.get(index).filter(|session| !session.closed) else {
             return widgets::empty_state("会话已关闭", "从「主机」里重新打开一台主机。");
         };
         let host = session.host.clone();
         let status = session.status.clone();
         let pending = session.pending_key.clone();
-        let can_terminal = session.worker.is_some();
+        let can_terminal = session.connected;
 
         let mut tabs = div().flex().items_center().gap(rem(6.));
         for (tab, name) in TABS.iter().enumerate() {
@@ -681,7 +821,7 @@ impl Adash {
 
         let surface = match self.session_tab {
             0 => self.render_terminal(index, window, cx),
-            1 => self.render_files(index, window, cx),
+            1 => self.render_files_page(index, cx),
             _ => self.render_monitor(index, cx),
         };
         let mut header = div()
@@ -692,6 +832,8 @@ impl Adash {
                 div()
                     .text_size(rem(32.))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .max_w(rem(440.))
+                    .truncate()
                     .child(host.name.clone()),
             )
             .child(
@@ -700,21 +842,13 @@ impl Adash {
                     .text_color(color(ColorRole::ON_SURFACE_VARIANT))
                     .child(format!("{}@{}:{}", host.username, host.address, host.port)),
             )
-            .children(status.map(|status| {
-                div()
-                    .text_size(TEXT_AUX)
-                    .text_color(color(ColorRole::ON_SURFACE_VARIANT))
-                    .child(status)
-            }))
             .child(div().flex_1());
-        if pending.is_some() {
-            header = header.child(widgets::filled_button(
-                "trust-host-key",
-                "信任并连接",
-                cx.listener(move |this, _, _, cx| this.trust_host_key(index, cx)),
-            ));
-        }
         if can_terminal {
+            header = header.child(widgets::text_button(
+                "reconnect-ssh",
+                "重新连接",
+                cx.listener(move |this, _, _, cx| this.connect(index, cx)),
+            ));
             header = header.child(widgets::text_button(
                 "sample-host",
                 "刷新",
@@ -751,6 +885,29 @@ impl Adash {
             .flex_1()
             .min_h_0()
             .child(header)
+            .children(status.map(|status| {
+                let blocked = status.contains("指纹已变更");
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap(rem(12.))
+                    .p(rem(12.))
+                    .rounded(rem(16.))
+                    .bg(color(if blocked {
+                        ColorRole::ERROR_CONTAINER
+                    } else {
+                        ColorRole::SURFACE_CONTAINER
+                    }))
+                    .child(div().flex_1().min_w_0().text_size(TEXT_AUX).child(status))
+                    .children(pending.map(|_| {
+                        widgets::filled_button(
+                            "trust-host-key",
+                            "信任并连接",
+                            cx.listener(move |this, _, _, cx| this.trust_host_key(index, cx)),
+                        )
+                    }))
+            }))
             .child(tabs)
             .child(surface)
             .into_any_element()
@@ -759,13 +916,17 @@ impl Adash {
     fn render_terminal(
         &mut self,
         index: usize,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let Some(session) = self.sessions.get(index) else {
             return div().into_any_element();
         };
-        if session.terminal.is_none() {
+        let Some(terminal) = session
+            .terminal
+            .as_ref()
+            .filter(|terminal| terminal.is_connected())
+        else {
             return div()
                 .flex()
                 .flex_col()
@@ -774,7 +935,7 @@ impl Adash {
                 .gap(rem(12.))
                 .child(widgets::empty_state(
                     "终端未连接",
-                    "连接后会打开一个真正的交互式 shell。",
+                    "连接后打开交互式 shell。",
                 ))
                 .child(div().flex().justify_center().child(widgets::filled_button(
                     "connect-terminal",
@@ -782,78 +943,224 @@ impl Adash {
                     cx.listener(move |this, _, _, cx| this.connect_terminal(index, cx)),
                 )))
                 .into_any_element();
-        }
-        let terminal = session.terminal.as_ref().expect("checked");
+        };
         let focus = session.focus.clone();
-        let key_focus = session.focus.clone();
-        let click_focus = session.focus.clone();
-        let lines = terminal_rows(terminal);
-        let font = self.store.data.settings.terminal_font_size.clamp(10, 24) as f32;
-        let mut screen = div()
-            .id("terminal-screen")
+        let key_focus = focus.clone();
+        let click_focus = focus.clone();
+        let font = f32::from(self.store.data.settings.terminal_font_size.clamp(10, 24));
+        let family: SharedString = if self.store.data.settings.terminal_font.is_empty() {
+            "monospace".into()
+        } else {
+            self.store.data.settings.terminal_font.clone().into()
+        };
+        let font_size = px(font * f32::from(window.rem_size()) / 14.);
+        let line_height = font_size * 1.35;
+        let font_id = window
+            .text_system()
+            .resolve_font(&gpui::font(family.clone()));
+        let cell_width = window
+            .text_system()
+            .advance(font_id, font_size, 'M')
+            .map_or(font_size * 0.6, |advance| advance.width);
+        let parser = terminal.screen.lock().unwrap();
+        let cursor = parser.screen().cursor_position();
+        let rows = crate::terminal_view::terminal_rows(parser.screen(), focus.is_focused(window));
+        drop(parser);
+        let native_input = session.terminal_input.clone();
+        native_input.update(cx, |input, _| input.sender = Some(terminal.input_sender()));
+        let preedit = native_input.read(cx).preedit.clone();
+        let ime_focus = focus.clone();
+        let inset = window.rem_size();
+        let mut contents = div()
             .flex()
             .flex_col()
+            .w_full()
+            .font_family(family.clone())
+            .text_size(font_size)
+            .line_height(line_height);
+        for row in rows {
+            contents = contents.child(
+                div()
+                    .h(line_height)
+                    .flex_shrink_0()
+                    .whitespace_nowrap()
+                    .child(row.element()),
+            );
+        }
+        let view = cx.entity().downgrade();
+        let screen = div()
+            .id("terminal-screen")
+            .relative()
             .flex_1()
             .min_h_0()
+            .min_w_0()
             .p(rem(14.))
-            .rounded(rem(16.))
+            .rounded(rem(20.))
             .bg(color(ColorRole::INVERSE_SURFACE))
-            .overflow_y_scroll()
+            .overflow_hidden()
             .track_focus(&focus)
             .on_key_down(cx.listener(move |this, event: &KeyDownEvent, window, cx| {
-                if let Some(bytes) = key_bytes(event) {
-                    if let Some(session) = this.sessions.get(index)
-                        && let Some(terminal) = &session.terminal
-                    {
-                        terminal.input(bytes);
-                    }
-                    window.focus(&key_focus, cx);
-                    cx.notify();
+                if this.modal_open() {
+                    return;
                 }
+                let Some(terminal) = this
+                    .sessions
+                    .get(index)
+                    .and_then(|session| session.terminal.as_ref())
+                else {
+                    return;
+                };
+                let key = event.keystroke.key.as_str();
+                // Printable input is committed by the platform text handler,
+                // including Chinese IME; handling it here would duplicate text.
+                let printable = event
+                    .keystroke
+                    .key_char
+                    .as_ref()
+                    .is_some_and(|text| !text.chars().any(char::is_control));
+                if printable
+                    && (event.prefer_character_input
+                        || (!event.keystroke.modifiers.control && !event.keystroke.modifiers.alt))
+                    || !event.keystroke.modifiers.control
+                        && !event.keystroke.modifiers.alt
+                        && !this.sessions[index]
+                            .terminal_input
+                            .read(cx)
+                            .preedit
+                            .is_empty()
+                {
+                    return;
+                }
+                if event.keystroke.modifiers.control
+                    && event.keystroke.modifiers.shift
+                    && key == "c"
+                {
+                    cx.write_to_clipboard(ClipboardItem::new_string(terminal.contents()));
+                } else if event.keystroke.modifiers.control && key == "v" {
+                    if let Some(text) = cx
+                        .read_from_clipboard()
+                        .and_then(|clipboard| clipboard.text())
+                    {
+                        let bracketed = terminal.screen.lock().unwrap().screen().bracketed_paste();
+                        let text = if bracketed {
+                            format!("\u{1b}[200~{text}\u{1b}[201~")
+                        } else {
+                            text
+                        };
+                        terminal.input(text.into_bytes());
+                    }
+                } else {
+                    let application = terminal
+                        .screen
+                        .lock()
+                        .unwrap()
+                        .screen()
+                        .application_cursor();
+                    if let Some(bytes) = crate::terminal_view::key_bytes(event, application) {
+                        terminal.input(bytes);
+                    } else {
+                        return;
+                    }
+                }
+                window.focus(&key_focus, cx);
+                cx.stop_propagation();
             }))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |_, _, window, cx| {
                     click_focus.focus(window, cx);
-                    cx.notify();
                 }),
-            );
-        for (text, role) in lines {
-            screen = screen.child(
+            )
+            .on_scroll(cx.listener(move |this, event: &ScrollEvent, _, cx| {
+                if let Some(terminal) = this
+                    .sessions
+                    .get(index)
+                    .and_then(|session| session.terminal.as_ref())
+                {
+                    let delta =
+                        f32::from(event.delta.pixel_delta(line_height).y) / f32::from(line_height);
+                    terminal.scroll(delta.round() as i32);
+                    cx.stop_propagation();
+                }
+            }))
+            .child(contents)
+            .children((!preedit.is_empty()).then(|| {
                 div()
-                    .font_family("monospace")
-                    .text_size(rem(font))
-                    .text_color(color(role))
-                    .child(text),
+                    .absolute()
+                    .left(inset + cell_width * f32::from(cursor.1))
+                    .top(inset + line_height * f32::from(cursor.0))
+                    .font_family(family)
+                    .text_size(font_size)
+                    .line_height(line_height)
+                    .text_color(color(ColorRole::INVERSE_ON_SURFACE))
+                    .bg(color(ColorRole::INVERSE_SURFACE))
+                    .border_b_1()
+                    .border_color(color(ColorRole::PRIMARY))
+                    .child(preedit)
+            }))
+            .child(
+                canvas(
+                    |bounds, _, _| bounds,
+                    move |bounds, _, window, cx| {
+                        native_input.update(cx, |input, _| {
+                            input.bounds = Bounds::new(
+                                point(
+                                    bounds.origin.x + cell_width * f32::from(cursor.1),
+                                    bounds.origin.y + line_height * f32::from(cursor.0),
+                                ),
+                                size(cell_width, line_height),
+                            )
+                        });
+                        window.handle_input(
+                            &ime_focus,
+                            ElementInputHandler::new(bounds, native_input.clone()),
+                            cx,
+                        );
+                        let rows = (f32::from(bounds.size.height) / f32::from(line_height))
+                            .floor()
+                            .max(2.) as u16;
+                        let columns = (f32::from(bounds.size.width) / f32::from(cell_width))
+                            .floor()
+                            .max(2.) as u16;
+                        let _ = view.update(cx, |this, _| {
+                            if let Some(terminal) = this
+                                .sessions
+                                .get(index)
+                                .and_then(|session| session.terminal.as_ref())
+                            {
+                                terminal.resize(rows, columns);
+                            }
+                        });
+                    },
+                )
+                .absolute()
+                .top(rem(14.))
+                .bottom(rem(14.))
+                .left(rem(14.))
+                .right(rem(14.)),
             );
-        }
-        let terminal_ref = session.terminal.as_ref().expect("checked");
         let mut keys = div().flex().gap(rem(6.)).flex_wrap();
         for (name, bytes) in [
             ("Ctrl+C", "\u{3}"),
             ("Ctrl+D", "\u{4}"),
             ("Tab", "\t"),
             ("Esc", "\u{1b}"),
-            ("↑", "\u{1b}[A"),
-            ("↓", "\u{1b}[B"),
-            ("←", "\u{1b}[D"),
-            ("→", "\u{1b}[C"),
         ] {
             let bytes = bytes.to_owned();
             keys = keys.child(widgets::tonal_button(
                 format!("key-{name}"),
                 name,
-                cx.listener(move |this, _, _, cx| {
-                    if let Some(session) = this.sessions.get(index)
-                        && let Some(terminal) = &session.terminal
+                cx.listener(move |this, _, _, _| {
+                    if let Some(terminal) = this
+                        .sessions
+                        .get(index)
+                        .and_then(|session| session.terminal.as_ref())
                     {
                         terminal.input(bytes.clone().into_bytes());
                     }
-                    cx.notify();
                 }),
             ));
         }
-        let _ = terminal_ref;
         div()
             .flex()
             .flex_col()
@@ -862,112 +1169,6 @@ impl Adash {
             .gap(rem(8.))
             .child(screen)
             .child(keys)
-            .into_any_element()
-    }
-
-    fn render_files(
-        &mut self,
-        index: usize,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let Some(session) = self.sessions.get(index) else {
-            return div().into_any_element();
-        };
-        let directory = session.directory.clone();
-        let entries = session.files.clone().unwrap_or_default();
-        let mut rows = div().flex().flex_col();
-        if entries.is_empty() {
-            rows = rows.child(widgets::empty_state(
-                "目录为空或尚未读取",
-                "连接后可刷新目录。",
-            ));
-        }
-        for entry in &entries {
-            rows = rows.child(file_row(index, entry, cx));
-        }
-        if let Some(error) = session.file_error.clone() {
-            rows = rows.child(widgets::notice(error, true));
-        }
-        let editor_path = session.editor_path.clone();
-        let editor = session.editor.clone();
-        let mut editor_panel = div().flex().flex_col().gap(rem(8.)).flex_1().min_w_0();
-        if let Some(path) = editor_path {
-            editor_panel =
-                editor_panel
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(rem(8.))
-                            .child(
-                                div()
-                                    .text_size(TEXT_AUX)
-                                    .text_color(color(ColorRole::ON_SURFACE_VARIANT))
-                                    .child(path.display().to_string()),
-                            )
-                            .child(div().flex_1())
-                            .child(widgets::filled_button(
-                                "save-file",
-                                "保存",
-                                cx.listener(move |this, _, _, cx| this.save_file(index, cx)),
-                            )),
-                    )
-                    .child(div().flex_1().min_h_0().overflow_hidden().child(
-                        widgets::rounded_area("file-editor", &editor, Some("文件内容")),
-                    ));
-        }
-        let upload = div()
-            .flex()
-            .items_center()
-            .gap(rem(8.))
-            .child(widgets::tonal_button(
-                "upload-file",
-                "上传本地文件",
-                cx.listener(move |this, _, _, cx| this.upload_pick(index, cx)),
-            ));
-        let _ = &upload;
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_h_0()
-            .gap(rem(10.))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(rem(8.))
-                    .child(
-                        div()
-                            .text_size(TEXT_BODY)
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(directory.display().to_string()),
-                    )
-                    .child(div().flex_1())
-                    .child(widgets::text_button(
-                        "refresh-files",
-                        "刷新",
-                        cx.listener(move |this, _, _, cx| this.refresh_files(index, cx)),
-                    )),
-            )
-            .child(
-                div()
-                    .flex()
-                    .gap(rem(12.))
-                    .flex_1()
-                    .min_h_0()
-                    .child(
-                        div()
-                            .id("file-list")
-                            .flex()
-                            .flex_col()
-                            .w(rem(300.))
-                            .overflow_y_scroll()
-                            .child(rows),
-                    )
-                    .child(editor_panel),
-            )
             .into_any_element()
     }
 
@@ -996,9 +1197,10 @@ impl Adash {
                     "内存",
                     format!("{:.0} %", sample.memory_percent()),
                     Some(format!(
-                        "{} / {} GiB",
-                        sample.memory_total.saturating_sub(sample.memory_available) / 1024 / 1024,
-                        sample.memory_total / 1024 / 1024
+                        "{:.1} / {:.1} GiB",
+                        sample.memory_total.saturating_sub(sample.memory_available) as f64
+                            / 1073741824.,
+                        sample.memory_total as f64 / 1073741824.
                     )),
                 ))
                 .child(widgets::stat_card(
@@ -1008,11 +1210,14 @@ impl Adash {
                         "{:.0} %",
                         100. * sample.disk_used_kib as f64 / sample.disk_total_kib.max(1) as f64
                     ),
-                    Some(format!("{} GiB", sample.disk_total_kib / 1024)),
+                    Some(format!(
+                        "{:.1} GiB",
+                        sample.disk_total_kib as f64 / 1048576.
+                    )),
                 ))
                 .child(widgets::stat_card(
                     "mon-net",
-                    "网络",
+                    "网络累计",
                     format!("↓ {:.1} MiB", sample.network_received as f64 / 1048576.),
                     Some(format!(
                         "↑ {:.1} MiB",
@@ -1046,155 +1251,4 @@ impl Adash {
             .child(grid)
             .into_any_element()
     }
-}
-
-fn file_row(index: usize, entry: &RemoteFile, cx: &mut Context<Adash>) -> AnyElement {
-    let path = entry.path.clone();
-    let directory = entry.directory;
-    let name = entry.name.clone();
-    let size = entry.size;
-    let open_path = path.clone();
-    let download_path = path.clone();
-    let delete_path = path.clone();
-    div()
-        .id(SharedString::from(format!("file-{}", path.display())))
-        .flex()
-        .items_center()
-        .gap(rem(6.))
-        .px(rem(10.))
-        .py(px(4.))
-        .rounded(rem(8.))
-        .hover(|this| this.bg(color(ColorRole::SURFACE_CONTAINER_HIGH)))
-        .child(
-            div()
-                .id(SharedString::from(format!("file-open-{}", path.display())))
-                .flex()
-                .items_center()
-                .gap(rem(8.))
-                .flex_1()
-                .min_w_0()
-                .cursor_pointer()
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    if directory {
-                        if let Some(session) = this.sessions.get_mut(index) {
-                            session.directory = open_path.clone();
-                        }
-                        this.refresh_files(index, cx);
-                    } else {
-                        this.open_file(index, open_path.clone(), cx);
-                    }
-                }))
-                .child(
-                    div()
-                        .text_size(TEXT_AUX)
-                        .child(if directory { "▸" } else { "·" }),
-                )
-                .child(div().flex_1().min_w_0().text_size(TEXT_BODY).child(name))
-                .child(
-                    div()
-                        .text_size(TEXT_AUX)
-                        .text_color(color(ColorRole::ON_SURFACE_VARIANT))
-                        .child(if directory {
-                            String::new()
-                        } else {
-                            human_size(size)
-                        }),
-                ),
-        )
-        .children((!directory).then(|| {
-            widgets::text_button(
-                format!("file-download-{}", download_path.display()),
-                "↓",
-                cx.listener(move |this, _, _, cx| {
-                    this.download_pick(index, download_path.clone(), cx);
-                }),
-            )
-        }))
-        .children((!directory).then(|| {
-            widgets::text_button(
-                format!("file-delete-{}", delete_path.display()),
-                "×",
-                cx.listener(move |this, _, _, cx| {
-                    this.pending_remote_delete = Some((index, delete_path.clone()));
-                    cx.notify();
-                }),
-            )
-        }))
-        .into_any_element()
-}
-
-fn human_size(size: u64) -> String {
-    if size >= 1024 * 1024 {
-        format!("{:.1} MiB", size as f64 / 1048576.)
-    } else if size >= 1024 {
-        format!("{:.1} KiB", size as f64 / 1024.)
-    } else {
-        format!("{size} B")
-    }
-}
-
-/// Terminal rows with a semantic colour per run. The renderer only uses roles.
-fn terminal_rows(terminal: &adash_ssh::Terminal) -> Vec<(String, ColorRole)> {
-    let screen = terminal.screen.lock().expect("terminal parser poisoned");
-    let (rows, cols) = screen.screen().size();
-    let mut lines = Vec::new();
-    for row in 0..rows {
-        let mut run = String::new();
-        let mut role = ColorRole::INVERSE_ON_SURFACE;
-        for column in 0..cols {
-            let Some(cell) = screen.screen().cell(row, column) else {
-                break;
-            };
-            let current = match cell.fgcolor() {
-                vt100::Color::Default => ColorRole::INVERSE_ON_SURFACE,
-                vt100::Color::Idx(1 | 9) => ColorRole::ERROR,
-                vt100::Color::Idx(2 | 10) => ColorRole::SUCCESS,
-                vt100::Color::Idx(3 | 11) => ColorRole::WARNING,
-                vt100::Color::Idx(4 | 12 | 6 | 14) => ColorRole::PRIMARY,
-                vt100::Color::Idx(5 | 13) => ColorRole::TERTIARY,
-                _ => ColorRole::INVERSE_ON_SURFACE,
-            };
-            if current != role && !run.is_empty() {
-                lines.push((std::mem::take(&mut run), role));
-            }
-            role = current;
-            run.push_str(cell.contents());
-        }
-        if run.is_empty() {
-            lines.push((String::new(), ColorRole::INVERSE_ON_SURFACE));
-        } else {
-            lines.push((run, role));
-        }
-    }
-    lines
-}
-
-/// Translate a key press into the bytes a terminal expects.
-fn key_bytes(event: &KeyDownEvent) -> Option<Vec<u8>> {
-    let modifiers = event.keystroke.modifiers;
-    let key = event.keystroke.key.as_str();
-    if modifiers.control {
-        return match key {
-            "c" => Some(vec![0x03]),
-            "d" => Some(vec![0x04]),
-            "l" => Some(vec![0x0c]),
-            "u" => Some(vec![0x15]),
-            "z" => Some(vec![0x1a]),
-            _ => None,
-        };
-    }
-    Some(match key {
-        "enter" => vec![b'\r'],
-        "backspace" => vec![0x7f],
-        "tab" => vec![b'\t'],
-        "escape" => vec![0x1b],
-        "up" => b"\x1b[A".to_vec(),
-        "down" => b"\x1b[B".to_vec(),
-        "right" => b"\x1b[C".to_vec(),
-        "left" => b"\x1b[D".to_vec(),
-        "home" => b"\x1b[H".to_vec(),
-        "end" => b"\x1b[F".to_vec(),
-        "delete" => b"\x1b[3~".to_vec(),
-        _ => event.keystroke.key_char.as_ref()?.as_bytes().to_vec(),
-    })
 }

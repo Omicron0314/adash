@@ -96,8 +96,21 @@ impl Adash {
     }
 
     fn set_settings(&mut self, cx: &mut Context<Self>, update: impl FnOnce(&mut Settings)) {
+        let previous = self.store.data.settings.clone();
         update(&mut self.store.data.settings);
-        let _ = self.store.save();
+        if let Err(error) = self.store.save() {
+            self.store.data.settings = previous;
+            self.notice = Some(format!("设置保存失败：{error}"));
+        } else {
+            let limit = self.store.data.settings.recent_limit;
+            if self.profiles.data.recent.len() > limit
+                && let Err(error) = self
+                    .profiles
+                    .update(|profiles| profiles.recent.truncate(limit))
+            {
+                self.notice = Some(format!("最近主机排序保存失败：{error:#}"));
+            }
+        }
         cx.notify();
     }
 
@@ -152,6 +165,22 @@ impl Adash {
                     }),
                 ),
             ))
+            .child(settings_row(
+                "连接后自动打开终端",
+                "关闭时可从会话页手动连接终端",
+                widgets::tonal_button(
+                    "toggle-auto-shell",
+                    if settings.auto_shell {
+                        "已开启"
+                    } else {
+                        "已关闭"
+                    },
+                    cx.listener(|this, _, _, cx| {
+                        let value = !this.store.data.settings.auto_shell;
+                        this.set_settings(cx, |settings| settings.auto_shell = value);
+                    }),
+                ),
+            ))
             .child(widgets::section_header("最近主机"))
             .child(settings_row(
                 "保留数量",
@@ -192,6 +221,7 @@ impl Adash {
                 }),
             ));
         }
+        let installed_fonts = window.text_system().all_font_names();
         let mut fonts = div().flex().gap(rem(6.)).flex_wrap();
         for font in [
             "",
@@ -200,6 +230,13 @@ impl Adash {
             "Noto Sans Mono",
             "Source Code Pro",
         ] {
+            if !font.is_empty()
+                && !installed_fonts
+                    .iter()
+                    .any(|installed| installed.eq_ignore_ascii_case(font))
+            {
+                continue;
+            }
             let name = if font.is_empty() {
                 "等宽默认"
             } else {
@@ -254,7 +291,6 @@ impl Adash {
                     .text_color(color(ColorRole::INVERSE_ON_SURFACE))
                     .child("root@web-01:~$ _"),
             );
-        let _ = window;
         CardSurface::new(CardVariant::Filled)
             .bg(color(ColorRole::SURFACE_CONTAINER_LOWEST))
             .rounded(rem(24.))
@@ -267,7 +303,8 @@ impl Adash {
             .child(settings_row("字体", "使用系统已安装的等宽字体", fonts))
             .child(widgets::section_header("快捷键"))
             .child(shortcut("复制终端内容", "Ctrl+Shift+C"))
-            .child(shortcut("停止当前会话", "在会话页点「返回主机」"))
+            .child(shortcut("粘贴终端内容", "Ctrl+V / Ctrl+Shift+V"))
+            .child(shortcut("关闭当前会话", "会话页「关闭会话」"))
             .into_any_element()
     }
 

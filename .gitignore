@@ -4,3 +4,5 @@ node_modules/
 .env
 *.local.json
 agent/runtime/dist/
+__pycache__/
+*.pyc

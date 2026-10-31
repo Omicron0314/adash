@@ -149,6 +149,11 @@ fn real_ssh_terminal_sftp_monitor_and_both_forward_directions() -> Result<()> {
     assert_eq!(output.exit_status, 7);
     assert!(output.stdout.contains("ssh-ok"));
     assert!(output.stdout.contains("stderr-ok"));
+    assert!(connection.execute("head -c 5000000 /dev/zero").is_err());
+    assert_eq!(
+        connection.execute("printf 'still-connected'")?.stdout,
+        "still-connected"
+    );
     let remote = server.directory.path().join("remote");
     connection.mkdir(&remote)?;
     let local = server.directory.path().join("source.txt");
@@ -170,6 +175,39 @@ fn real_ssh_terminal_sftp_monitor_and_both_forward_directions() -> Result<()> {
         .write_remote_text(&remote_file, longer)
         .map_err(|e| anyhow::anyhow!("write_remote_text: {e:#}"))?;
     assert_eq!(connection.read_remote_text(&remote_file)?, longer);
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(&remote_file, fs::Permissions::from_mode(0o640))?;
+    let symlink = remote.join("linked.txt");
+    std::os::unix::fs::symlink(&remote_file, &symlink)?;
+    connection.write_remote_text(&symlink, longer)?;
+    assert!(fs::symlink_metadata(&symlink)?.file_type().is_symlink());
+    assert_eq!(
+        fs::metadata(&remote_file)?.permissions().mode() & 0o777,
+        0o640
+    );
+    let binary = remote.join("binary");
+    fs::write(&binary, [0, 1, 2])?;
+    assert!(connection.read_remote_text(&binary).is_err());
+    let large = server.directory.path().join("large.bin");
+    fs::write(&large, vec![7u8; 200_000])?;
+    let cancelled = remote.join("cancelled.bin");
+    assert!(
+        connection
+            .upload_with_progress(&large, &cancelled, |done, _| {
+                if done >= 65536 {
+                    bail!("cancelled");
+                }
+                Ok(())
+            })
+            .is_err()
+    );
+    assert!(!cancelled.exists());
+    assert!(
+        connection
+            .list_files(&remote)?
+            .iter()
+            .all(|file| !file.name.contains(".adash-"))
+    );
     assert!(
         connection
             .list_files(&remote)?
@@ -178,7 +216,22 @@ fn real_ssh_terminal_sftp_monitor_and_both_forward_directions() -> Result<()> {
     );
     let download = server.directory.path().join("download.txt");
     connection.download(&remote_file, &download)?;
-    assert_eq!(fs::read_to_string(download)?, longer);
+    assert_eq!(fs::read_to_string(&download)?, longer);
+    assert!(connection.download(&remote_file, &download).is_err());
+    assert_eq!(fs::read_to_string(&download)?, longer);
+    let cancelled_download = server.directory.path().join("cancelled-download");
+    assert!(
+        connection
+            .download_with_progress(&remote_file, &cancelled_download, |_, _| bail!("cancelled"))
+            .is_err()
+    );
+    assert!(!cancelled_download.exists());
+    let empty_directory = remote.join("empty");
+    connection.mkdir(&empty_directory)?;
+    connection.remove_file(&empty_directory)?;
+    assert!(!empty_directory.exists());
+    assert!(connection.rename_file(&remote_file, &fresh).is_err());
+    assert_eq!(connection.read_remote_text(&fresh)?, "brand new\n");
     let renamed = remote.join("renamed.txt");
     connection.rename_file(&remote_file, &renamed)?;
     connection.remove_file(&renamed)?;

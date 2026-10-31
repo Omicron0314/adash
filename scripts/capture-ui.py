@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Capture a Mock window on niri without changing the user's account data.
 
-Requires a built adash-app, niri, wl-paste and ImageMagick. Only the process
+Requires a built adash-app, niri and ImageMagick. Only the process
 launched by this script is resized and terminated. XDG_DATA_HOME isolates state.
 """
 import argparse
@@ -36,15 +36,17 @@ def main():
     previous = next((window["id"] for window in windows() if window["is_focused"]), None)
     with tempfile.TemporaryDirectory(prefix="adash-capture-") as temporary:
         env = os.environ.copy()
-        for variable in ["ADASH_DEMO_ASK", "ADASH_DEMO_REPLAY"]:
+        for variable in ["ADASH_DEMO_ASK", "ADASH_DEMO_REPLAY", "ADASH_DEMO_DIALOG", "ADASH_START_HOST", "ADASH_START_REMOTE_DIR", "ADASH_START_SESSION_TAB"]:
             env.pop(variable, None)
         env.update(
-            UDASH_MOCK="1", XDG_DATA_HOME=temporary,
+            UDASH_MOCK="1", XDG_DATA_HOME=temporary, ADASH_DATA_DIR=str(Path(temporary) / "adash"),
             ADASH_START_PAGE=args.page, ADASH_START_FLOW="shop-api",
             ADASH_START_SELECTED=args.selected,
         )
         if not args.online:
             env["ADASH_OFFLINE"] = "1"
+        else:
+            env.pop("ADASH_OFFLINE", None)
         if args.ask:
             env["ADASH_DEMO_ASK"] = args.ask
         with tempfile.TemporaryFile() as log:
@@ -70,10 +72,14 @@ def main():
                 time.sleep(4)
                 action("focus-window", "--id", window_id)
                 time.sleep(0.15)
-                action("screenshot-window", "--id", window_id)
-                time.sleep(2)
                 raw = Path(temporary) / "window.png"
-                raw.write_bytes(subprocess.check_output(["wl-paste", "--type", "image/png"]))
+                action("screenshot-window", "--id", window_id, "--path", str(raw))
+                for _ in range(100):
+                    if raw.exists():
+                        break
+                    time.sleep(0.05)
+                if not raw.exists():
+                    raise RuntimeError("niri did not write the window screenshot")
                 args.output.parent.mkdir(parents=True, exist_ok=True)
                 # Compositor shadow is outside the window. Crop its even inset,
                 # then normalize the output to logical pixels for documentation.

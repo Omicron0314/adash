@@ -331,6 +331,20 @@ mod tests {
     }
 
     #[test]
+    fn old_state_files_receive_current_settings_defaults() {
+        let data: StoreData = serde_json::from_str(
+            r#"{"plans":[],"approvals":{},"projects":{},"runs":[],"settings":{"terminal_font_size":15}}"#,
+        )
+        .expect("old state");
+        assert_eq!(data.settings.terminal_font_size, 15);
+        assert!(data.settings.confirm_close);
+        assert_eq!(data.settings.monitor_interval, 10);
+        let no_settings: StoreData =
+            serde_json::from_str(r#"{"plans":[],"approvals":{},"projects":{},"runs":[]}"#)
+                .expect("state from before settings existed");
+        assert_eq!(no_settings.settings.appearance, "light");
+    }
+    #[test]
     fn state_round_trips_through_disk() {
         let mut store = temp_store("roundtrip");
         store.set_project(ProjectRecord {

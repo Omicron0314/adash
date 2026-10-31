@@ -3,9 +3,11 @@
  *
  * Rust starts this once. Each line on stdin is a permissioned command; each line
  * on stdout is one JSON event. The SDK owns the conversation, model, tools,
- * session and extension runtime. This host never opens a socket and never
- * exposes credentials or session files to the GUI.
+ * session and extension runtime. Model/network I/O belongs to the SDK; this
+ * host itself only speaks framed JSONL and never exposes credentials or
+ * session files to the GUI.
  */
+import { parseModelChoice, projectEvent } from "./protocol.js";
 import { createInterface } from "node:readline";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -90,8 +92,8 @@ function uiBindings(): ExtensionUIContext {
 
 type StartCommand = { model?: string; session_dir?: string };
 
-// The six digits of the hex color are the SDK theme's only requirement; the GUI
-// never renders through the terminal theme. A wrong shape is caught by typecheck.
+// The SDK context is used only for confirmation/status notifications; its
+// terminal-renderer theme is never used by this GPUI application.
 const theme = {
   name: "adash", colors: {
     text: "#1c1b22", muted: "#47464f", dim: "#787680", accent: "#4b49c8",
@@ -111,7 +113,9 @@ async function start(command: StartCommand) {
     noExtensions: true,
     noSkills: true,
     noContextFiles: true,
+    noPromptTemplates: true,
     noThemes: true,
+    settingsManager: settings,
     additionalExtensionPaths: [extension],
     additionalSkillPaths: [skills],
     appendSystemPrompt: existsSync(systemPromptFile) ? [await (await import("node:fs/promises")).readFile(systemPromptFile, "utf8")] : [],
@@ -120,7 +124,7 @@ async function start(command: StartCommand) {
   const choices = command.model || modelId;
   let model;
   if (choices) {
-    const [provider, id] = choices.includes("/") ? choices.split("/", 2) : ["", choices];
+    const { provider, id } = parseModelChoice(choices);
     model = provider ? modelRuntime.getModel(provider, id) : modelRuntime.getAvailableSnapshot().find((entry) => entry.id === id);
     verify(model, `模型不可用：${choices}`);
   }
@@ -138,8 +142,9 @@ async function start(command: StartCommand) {
   session = created.session;
   unsubscribe?.();
   unsubscribe = session.subscribe((event) => {
-    lastText = session?.getLastAssistantText?.() ?? lastText;
-    emit(event);
+    if (event.type === "message_end") { lastText = session?.getLastAssistantText() ?? lastText; }
+    const projected = projectEvent(event);
+    if (projected) emit(projected);
   });
   await session.bindExtensions({ uiContext: uiBindings(), mode: "rpc" });
   emit({ type: "ready", provider: session.model?.provider ?? "", model: session.model?.id ?? "", tools: session.getActiveToolNames?.() ?? [] });
@@ -149,7 +154,6 @@ async function sendPrompt(message: string, images?: never[]) {
   verify(session, "agent is not started");
   try {
     await session.prompt(message, images ? { images } : undefined);
-    setImmediate(() => emit({ type: "agent_settled" }));
   } catch (error) {
     emit({ type: "error", error: error instanceof Error ? error.message : String(error) });
   }
@@ -174,10 +178,10 @@ const handlers: Record<string, (command: Command) => unknown> = {
   follow_up(command: Command) { session?.followUp(String(command.message ?? "")).catch((error: unknown) => emit({ type: "error", error: String(error) })); },
   async abort() {
     for (const resolve of [...confirmations.values()]) resolve(false);
-    await session?.abort(); emit({ type: "agent_settled" });
+    await session?.abort();
   },
   async set_model(command: Command) {
-    const [provider, id] = String(command.model ?? "").split("/", 2);
+    const { provider, id } = parseModelChoice(String(command.model ?? ""));
     const model = session?.modelRuntime.getModel(provider, id);
     if (model && session) { await session.setModel(model); emit({ type: "model", model: `${provider}/${id}` }); }
   },

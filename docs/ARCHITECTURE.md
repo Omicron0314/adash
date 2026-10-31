@@ -16,10 +16,10 @@
      ├ agent/skills/*                                      │  Mock 后端（fixtures/mock）
      └ spawns: adash-tool <cmd>  ────── JSON ──────────────┘
 
-   adash-ssh（独立 crate）← adash-app：russh/ssh2 传输、PTY、SFTP、监控、转发
+   adash-ssh（独立 crate）← adash-app：ssh2 传输、PTY、SFTP、监控、转发
 ```
 
-三条数据路径：
+四条数据路径：
 
 1. **GUI 读**：`adash-app` → `ucloud-api`（read 接口）→ `adash-core` 归一化 → 页面。
 2. **代理做**：SDK 宿主 → TS 扩展 → `adash-tool` → `ucloud-api`/`adash-core` → JSON 回传。
@@ -39,7 +39,7 @@
 | `transport` | HTTP、重试、超时、`RetCode != 0` 转 `Error::Api` |
 | `paths` | 接口名常量 + 文档链接（`https://docs.ucloud.cn/api/...`） |
 | `models` | 各产品响应的 `serde` 类型，字段名保持 UCloud 原样（PascalCase，用 `rename`） |
-| `credentials` | 环境变量 → 系统钥匙串，私钥不进日志（`Debug` 手写脱敏） |
+| `credentials` | 环境变量读取，私钥不进日志（`Debug` 手写脱敏）；UCloud 钥匙串读取待实现 |
 | `mock` | `UDASH_MOCK=1` 时从 `fixtures/mock` 读响应，行为与真实接口一致 |
 | `client` | 对外门面：`inventory()`、`billing()`、`price()`、`regions()`… |
 
@@ -80,9 +80,11 @@
 ### agent-sdk 与 agent/runtime
 
 `agent/runtime` 是应用自带的 Node 宿主，用 pi SDK 的 `createAgentSession` 创建会话：
-`DefaultResourceLoader` 关闭标准发现（`noExtensions`/`noSkills`/`noContextFiles`），只加入本仓库的
+`DefaultResourceLoader` 关闭标准发现（`noExtensions`/`noSkills`/`noContextFiles`/`noPromptTemplates`），只加入本仓库的
 `ucloud_*` 扩展、skills 与追加系统提示；工具白名单固定为 10 个 `ucloud_*`，没有 shell/edit/write。
-宿主接收 `start` / `prompt` / `abort` / `set_model` / `ui_response` / `dispose`，输出 SDK 事件。
+宿主接收 `start` / `prompt` / `abort` / `set_model` / `ui_response` / `dispose`，输出 GUI 所需的 SDK 事件投影。
+文本更新仅传本次 delta，避免反复传送完整消息与 provider 元数据；模型错误显式进入错误事件。
+模型 ID 按首个斜线分割 provider，保留 ID 内部的路径。
 扩展的 `ctx.ui.confirm` 以 `ui_request` 转发到 GUI，用户在计划卡片确认后回传 `ui_response`；
 GUI 写入一次性批准，`adash-tool apply` 再校验计划哈希、过期与批准，执行仍在 Rust。
 
@@ -92,7 +94,11 @@ GUI 写入一次性批准，`adash-tool apply` 再校验计划哈希、过期与
 
 独立传输层：主机指纹（首次确认、变更拒绝，先于认证）、agent/密码/私钥认证（密钥环）、
 PTY + `vt100` 终端、SFTP 列表/读写/上传/下载/重命名/删除、`/proc` 监控采样、本地与远程端口转发。
-GUI 只通过请求/应答通道交互。集成测试 `crates/adash-ssh/tests/localhost.rs` 会启动一个临时的、
+GUI 只通过请求/应答通道交互，已关闭会话保留索引槽位，异步文件选择结果不会误用另一台主机。
+终端的网格绘制和原生输入法分别在 `terminal_view` / `terminal_input`；每个输入实体只持有本会话的发送端，
+输入法预编辑不发送到 PTY，提交时检查焦点与启用状态。文件列表使用 Kit 的 `uniform_list`。
+文本保存优先原子替换；服务器不支持时保留备份，失败则恢复或报告备份路径。传输分块处理并支持取消。
+集成测试 `crates/adash-ssh/tests/localhost.rs` 会启动一个临时的、
 仅监听回环的非特权 `sshd`，验证上述全部路径（`ADASH_SSH_INTEGRATION=1`）。
 
 ### adash-app
@@ -107,7 +113,9 @@ GUI 只通过请求/应答通道交互。集成测试 `crates/adash-ssh/tests/lo
 | `agent` | SDK host 生命周期、消息流、计划确认；host 不可用时退化为本地应答 |
 | `ssh` | 主机/身份/片段/转发状态、连接与终端生命周期、批处理 |
 | `palette` | neko 浅色/深色语义色板，供主题切换使用 |
-| `views_sessions` | 主机、身份、片段、端口转发与终端/文件/监控三个面 |
+| `views_sessions` | 主机、身份、片段、端口转发与会话终端/监控 |
+| `views_files` | SFTP 目录、传输和文本编辑器 |
+| `terminal_view` / `terminal_input` | VT 行样式、控制键编码、原生 IME 与按会话绑定的输入 |
 | `i18n` | 全部用户可见文案 |
 
 ## 三个页面的数据来源
@@ -137,12 +145,12 @@ GUI 只通过请求/应答通道交互。集成测试 `crates/adash-ssh/tests/lo
 
 ## 代理不可用时的退化
 
-没有装 pi、模型没配好、或 `adash-tool` 不在 `target/debug` 时，应用不会变成空壳：
+Node/SDK 宿主不可用、模型没配好、或 `adash-tool` 不可用时，应用不会变成空壳：
 `agent.rs` 会退化成**本地应答**——用同一份 `inventory` / `billing` / `flow` 数据回答
 「有哪些资源」「花了多少」「这个项目用了哪些服务」「有浪费吗」，并且每条消息都标注「离线模式」。
 它不会编造数据，也不会执行任何变更；离线时确认计划只记录执行，并明确说明没有创建资源。
 
-pi 能启动但**模型不可用**（没配 API key、provider 报错）时同样退化：这一轮改为本地应答，
+SDK 已启动但**模型不可用**（没配 API key、provider 报错）时同样退化：这一轮改为本地应答，
 并在折叠说明里写清原因（`模型不可用：…`），不会留下空白的助手气泡。
 
 ## 威胁模型（demo 级）
@@ -152,7 +160,7 @@ pi 能启动但**模型不可用**（没配 API key、provider 报错）时同�
 | 代理误删/误建 | 只能 apply 已批准计划；删除默认降级为停机；令牌一次性、带有效期 |
 | 私钥泄漏到模型上下文 | 凭证只在 `ucloud-api` 读取；`adash-tool` 输出脱敏，测试覆盖 |
 | 计划被篡改 | 计划哈希 + 过期时间 + 令牌三方校验 |
-| 代理越权执行 shell | `pi --no-builtin-tools`，只加载本仓库扩展 |
+| 代理越权执行 shell | SDK 显式云工具白名单，关闭标准扩展、上下文与提示模板发现 |
 | Mock 数据误连真实账户 | 必须显式清掉 `UDASH_MOCK`；启动时在标题栏显示当前模式 |
 
 ## 明确不做（demo 范围）

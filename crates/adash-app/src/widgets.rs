@@ -131,6 +131,32 @@ pub fn rounded_area(
         .into_any_element()
 }
 
+/// A rounded editor using the same font settings as the terminal.
+pub fn rounded_area_with_font(
+    id: impl Into<ElementId>,
+    state: &Entity<gpui::base::input::TextareaState>,
+    family: SharedString,
+    size: f32,
+) -> AnyElement {
+    div()
+        .id(id)
+        .flex()
+        .p(rem(14.))
+        .rounded(rem(20.))
+        .bg(color(ColorRole::SURFACE_CONTAINER_HIGH))
+        .child(
+            div().flex_1().min_w_0().child(
+                gpui_kit::component::input::Textarea::new(state)
+                    .appearance(false)
+                    .p_0()
+                    .font_family(family)
+                    .text_size(rem(size))
+                    .aria_label("文件内容"),
+            ),
+        )
+        .into_any_element()
+}
+
 /// A labelled rounded field for forms: the label sits above, the field itself
 /// stays a clean pill so it reads the same as the composer.
 pub fn labelled_input(

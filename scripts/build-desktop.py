@@ -78,7 +78,7 @@ def main():
         "export ADASH_ROOT=" + shlex.quote(str(ROOT)),
         "export ADASH_TOOL=" + shlex.quote(str(binaries["adash-tool"])),
         "export UDASH_MOCK=1",
-        "unset ADASH_START_PAGE ADASH_START_SELECTED ADASH_START_FLOW ADASH_DEMO_ASK ADASH_DEMO_REPLAY ADASH_OFFLINE",
+        "unset ADASH_START_PAGE ADASH_START_SELECTED ADASH_START_FLOW ADASH_START_HOST ADASH_START_REMOTE_DIR ADASH_START_SESSION_TAB ADASH_START_SETTINGS ADASH_DEMO_ASK ADASH_DEMO_REPLAY ADASH_DEMO_APPEARANCE ADASH_DEMO_DIALOG ADASH_OFFLINE",
         "exec " + shlex.quote(str(binaries["adash-app"])), "",
     ]), 0o755)
     desktop = "\n".join([

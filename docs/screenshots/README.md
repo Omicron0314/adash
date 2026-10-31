@@ -17,9 +17,12 @@
 | 端口转发 | [port-forward.png](port-forward.png) | 1440×900 |
 | 设置 · 通用 / 终端 / 连接 / 关于 | [settings-0.png](settings-0.png) … [settings-3.png](settings-3.png) | 1440×900 |
 | 设置 · 关于（真实 SDK 状态） | [settings-3.png](settings-3.png) | 1440×900 |
-| 主机会话 | [session.png](session.png) | 1440×900 |
+| 实际 SSH 终端 / SFTP / 监控 | [ssh-terminal.png](ssh-terminal.png) · [ssh-files.png](ssh-files.png) · [ssh-monitor.png](ssh-monitor.png) | 1440×900 |
+| 首次连接与完整指纹 | [ssh-first-connection.png](ssh-first-connection.png) | 1440×900 |
+| 远程目录确认（M3 模态框） | [ssh-dialog.png](ssh-dialog.png) | 1440×900 |
+| SDK 模型启动失败后的本地应答 | [agent-fallback.png](agent-fallback.png) | 1440×900 |
 
-复现（需要已构建应用、niri、wl-paste 与 ImageMagick）：
+复现（需要已构建应用、niri 与 ImageMagick）：
 
 ```sh
 cargo build -p adash-app
@@ -33,9 +36,26 @@ ADASH_START_SETTINGS=3 python3 scripts/capture-ui.py settings docs/screenshots/s
 ADASH_DEMO_APPEARANCE=dark python3 scripts/capture-ui.py home docs/screenshots/overview-dark.png
 ```
 
-默认使用本地应答（`ADASH_OFFLINE=1`）；`--online` 启动嵌入的 pi SDK，用于核对模型与工具状态。
+默认使用本地应答（`ADASH_OFFLINE=1`）；`--online` 启动嵌入的 pi SDK，并清除继承的离线标记。
+SDK 失败截图使用不存在的模型 ID，不调用付费模型。
+
+真实 SSH 截图使用临时密钥、临时目录与仅监听回环的 sshd：
+
+```sh
+python3 scripts/ssh-smoke.py --capture docs/screenshots/ssh-terminal.png
+python3 scripts/ssh-smoke.py --tab files --capture docs/screenshots/ssh-files.png
+python3 scripts/ssh-smoke.py --tab monitor --capture docs/screenshots/ssh-monitor.png
+python3 scripts/ssh-smoke.py --untrusted --capture docs/screenshots/ssh-first-connection.png
+python3 scripts/ssh-smoke.py --dialog --capture docs/screenshots/ssh-dialog.png
+ADASH_MODEL=missing-provider/nested/model python3 scripts/capture-ui.py home \
+  docs/screenshots/agent-fallback.png --online --ask '我有哪些资源？'
+```
+
+终端工作目录与 history 文件均在临时目录内；截图后清理自己启动的 app 与 sshd。
+截图明确保存到临时路径，避免写入用户的截图库。
 
 脚本仅调整、关闭自己启动的窗口，并恢复先前焦点；不会覆盖用户的 HOME 或应用状态。
+即使调用者设置了 `ADASH_DATA_DIR`，截图也强制使用自己的临时数据目录。
 
 已逐张检查布局、圆角输入、卡片边距、资源价格换行与图中节点可见性。
 这些截图是视觉验收证据，不能替代完整的鼠标、键盘、滚动及真实账户交互测试。

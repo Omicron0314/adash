@@ -76,6 +76,7 @@ pub struct Profiles {
 pub struct ProfileStore {
     pub data: Profiles,
     path: PathBuf,
+    writable: bool,
 }
 impl ProfileStore {
     pub fn open(path: PathBuf) -> Result<Self> {
@@ -84,10 +85,35 @@ impl ProfileStore {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Profiles::default(),
             Err(error) => return Err(error.into()),
         };
-        Ok(Self { data, path })
+        Ok(Self {
+            data,
+            path,
+            writable: true,
+        })
+    }
+    /// Preserve an unreadable/corrupt file and make failed saves explicit.
+    pub fn unavailable(path: PathBuf) -> Self {
+        Self {
+            data: Profiles::default(),
+            path,
+            writable: false,
+        }
     }
     pub fn save(&self) -> Result<()> {
+        if !self.writable {
+            bail!("主机配置未能读取，已禁止覆盖原文件");
+        }
         save_private_json(&self.path, &self.data)
+    }
+    /// Publish a profile edit only if it has been persisted.
+    pub fn update(&mut self, edit: impl FnOnce(&mut Profiles)) -> Result<()> {
+        let previous = self.data.clone();
+        edit(&mut self.data);
+        if let Err(error) = self.save() {
+            self.data = previous;
+            return Err(error);
+        }
+        Ok(())
     }
     pub fn path(&self) -> &Path {
         &self.path
@@ -102,7 +128,10 @@ impl ProfileStore {
 pub fn save_private_json(path: &Path, data: &impl Serialize) -> Result<()> {
     let parent = path.parent().context("没有配置目录")?;
     fs::create_dir_all(parent)?;
-    let temporary = path.with_extension(format!("tmp-{}", std::process::id()));
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_nanos();
+    let temporary = path.with_extension(format!("tmp-{}-{stamp}", std::process::id()));
     let mut file = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -171,6 +200,17 @@ mod tests {
         );
         fs::write(&path, "broken").unwrap();
         assert!(ProfileStore::open(path.clone()).is_err());
+        let mut unavailable = ProfileStore::unavailable(path.clone());
+        assert!(
+            unavailable
+                .update(|profiles| {
+                    profiles
+                        .known_hosts
+                        .insert("unexpected".into(), "fingerprint".into());
+                })
+                .is_err()
+        );
+        assert!(unavailable.data.known_hosts.is_empty());
         assert_eq!(fs::read_to_string(path).unwrap(), "broken");
     }
 }

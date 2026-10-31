@@ -9,7 +9,7 @@
 adash 是一个**桌面端云控制台 + 对话式代理**：用户用自己的 UCloud 账号登录，
 既可以像控制台一样看清账户里的资源、项目和预算，也可以直接用一句话让代理去查、去建、去省。
 
-界面只有一个窗口、三个页面（[catussh](https://github.com/mizorewww/catussh) 的外壳骨架，
+界面只有一个窗口，包含三个产品页面及主机、设置入口（[catussh](https://github.com/mizorewww/catussh) 的外壳骨架，
 M3 Expressive 视觉来自 [neko.html](docs/design/neko.html)）：
 
 | 页面 | 是什么 | 关键词 |
@@ -17,7 +17,7 @@ M3 Expressive 视觉来自 [neko.html](docs/design/neko.html)）：
 | **对话（主页）** | 以 pi 为底层的代理对话入口 + 账户整体概览卡片 | 一句话 → 计划卡片 → 确认 → 结果 |
 | **云资源** | 用户**已经创建**的资源清单（主机、EIP、云盘、数据库、Redis、US3…） | 筛选/搜索/详情/跳转 |
 | **AI 流程** | 参考 n8n 的只读流程图：**一个项目用了哪些服务**、怎么连的、这次部署/请求走了哪条路 | 节点、连线、执行回放 |
-| **连接主机**（分组） | 从「云资源」打开的主机会话（终端/文件/监控），以及身份、片段、端口转发 | 会话随主机出现，不抢首屏 |
+| **主机与会话** | 从「云资源」打开的主机会话（终端/文件/监控），以及身份、片段、端口转发 | 会话随主机出现，不抢首屏 |
 
 三个产品页共用同一份领域数据：代理、概览卡片和流程图看到的资源必须是同一批。
 「主机会话」保留 catussh 的终端、文件、监控、身份、片段和端口转发能力；导航不显示分组标题。
@@ -56,7 +56,7 @@ Rust workspace，GPUI 桌面应用，Material 3 Expressive 组件来自
   TS 扩展里**禁止**直接请求 UCloud API，也禁止实现签名逻辑。
 - **代理复用 pi SDK。** 应用自带 Node SDK host（`agent/runtime`），调用 `createAgentSession` 管理会话、模型、工具与确认；
   Rust 通过 `agent-sdk` 的 JSONL 边界与它通信，不启动、也不连接外部 `pi` CLI 或已有 pi 会话。
-- **SDK 使用显式工具白名单**：`noExtensions`/`noSkills`/`noContextFiles` 关掉标准发现，只加载本仓库的
+- **SDK 使用显式工具白名单**：`noExtensions`/`noSkills`/`noContextFiles`/`noPromptTemplates` 关掉标准发现，只加载本仓库的
   `ucloud_*` 工具与 skill；没有 bash/edit/write。会话存在应用数据目录，凭证不进入模型上下文。
 - **三个页面共享 `adash-core` 的类型**，不允许各页面自己解析 UCloud JSON。
 
@@ -113,7 +113,10 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 UDASH_MOCK=1 cargo run -p adash-app            # Mock 模式跑 GUI
 UDASH_MOCK=1 cargo run -p adash-tool -- inventory < /dev/null
-cd agent/extensions/ucloud && npm install && npm run typecheck
+npm --prefix agent/extensions/ucloud install
+npm --prefix agent/extensions/ucloud run typecheck
+npm --prefix agent/runtime test
+ADASH_SSH_INTEGRATION=1 cargo test -p adash-ssh --test localhost
 ```
 
 Linux 构建 GPUI 需要 `libxkbcommon wayland vulkan-icd-loader libx11 libxcb fontconfig freetype2`

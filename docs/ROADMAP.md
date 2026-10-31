@@ -11,7 +11,7 @@
 - [x] 应用骨架：标题栏 + 左侧导航 + 三个页面占位
       证据：`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace` 全通过
 - [x] `AGENTS.md`、`docs/`（ARCHITECTURE / UI / API / ROADMAP / decisions）
-- [x] `pi-rpc` 分帧函数 + 单测
+- [x] `agent-sdk` 的 LF 分帧与生命周期函数 + 单测（原 `pi-rpc` 已移除）
 
 ## M1 UCloud API 客户端（`ucloud-api`）
 
@@ -45,22 +45,24 @@
 
 验收：`cargo test --workspace`；`apply` 在无令牌/令牌过期/计划被改三种情况下都拒绝执行。
 
-## M3 pi 代理（`agent/` + `pi-rpc`）
+## M3 pi 代理（`agent/runtime` + `agent-sdk`）
 
-- [x] `pi-rpc`：进程生命周期、分帧、请求 id、事件分类、extension UI 应答
-- [x] `agent/extensions/ucloud`：9 个 `ucloud_*` 工具（7 read、3 plan、1 apply），全部走 `adash-tool`
-      证据：`npx tsc --noEmit` 通过
-- [x] `agent/prompts/system.md` + `agent/skills/{deploy-cheapest,cost-optimize,ucloud-regions,flow-map}`
-- [x] 计划确认闭环：GUI 计划卡片 → 一次性批准 → `ucloud_apply_plan`；离线时本地记录
-- [ ] 后续：脱敏输出测试落成单测、pi 会话目录固定到应用数据目录
+- [x] SDK 宿主：`createAgentSession`、启动等待、流式事件、错误、取消与会话清理；不调用 pi CLI。
+- [x] `agent/extensions/ucloud`：10 个 `ucloud_*` 工具（6 read、3 plan、1 apply），全部走 `adash-tool`。
+- [x] `agent/prompts/system.md` + `agent/skills/{deploy-cheapest,cost-optimize,ucloud-regions,flow-map}`。
+- [x] 计划确认：GUI 一次性批准 → `ucloud_apply_plan`；仅收到 UI 应答而没有令牌仍被拒绝。
+- [x] 会话写入应用数据目录；标准扩展、上下文文件、提示模板和工具发现关闭。
+- [x] 本地 SDK 集成测试：回环模型服务 + 真实 SDK/扩展/Rust CLI，验证启动、白名单、拒绝/批准/取消、
+      流式输出、模型错误、含多层斜线的模型 ID、进程正常退出，以及凭证不进入请求/事件/会话。
+      证据：`npm --prefix agent/runtime test`；不调用付费模型或真实云写接口。
 
-验收：Mock 下跑通「一句话部署 → 计划卡片 → 确认 → 资源出现」与「找出 2 个孤儿 EIP 并生成计划」。
+验收：Mock 下「一句话生成计划 → 确认 → 执行记录」；Mock 当前不会实际增删库存资源。
 
 ## M4 GUI（`adash-app`，M3 Expressive）
 
 - [x] 按 neko.html 实际模板重做：96px 图标 rail、28px 主面板、白卡内容内边距、独立右栏与精确浅色色板。
-      证据：`docs/screenshots/{overview,resources,flows,session,settings}.png`；
-      `overview-1280.png` 覆盖 1280×800 下的省钱计划；fmt/clippy、49 项 Rust 测试与 TS typecheck 通过。
+      证据：`docs/screenshots/{overview,resources,flows,ssh-terminal,settings-0}.png`；
+      `overview-1280.png` 覆盖 1280×800 下的省钱计划；fmt/clippy、Rust 测试与 TS typecheck 通过。
 
 - [x] 应用外壳：32px 自绘标题栏、96px 图标导航（对话/云资源/主机/AI 流程/身份/片段/端口转发/设置）、
       Mock·Live 徽标；不再显示「连接主机」分组标题
@@ -90,7 +92,18 @@ catussh 的终端 / 文件 / 监控 / 身份 / 片段 / 端口转发全部保留
 - [x] 主机/身份/片段/端口转发页面；片段可在当前主机或选中的多台主机上并行执行。
 - [x] 集成测试：临时非特权 sshd，验证全部传输路径、指纹拒绝与两种转发方向。
       证据：`ADASH_SSH_INTEGRATION=1 cargo test -p adash-ssh --test localhost` → 1 passed。
-- [ ] 待补：终端滚动缓冲区 UI、断线重连提示、文件上传进度、目录新建/重命名 UI、主机编辑。
+- [x] 原生终端：同行多色与空格/中文网格、ANSI/256 色/truecolor、光标/粗体、按窗口同步 PTY 尺寸、
+      滚轮历史、常用控制/功能/导航键、复制当前屏幕、bracketed paste 与中文 IME。
+      GPUI 测试验证预编辑不发往远端，提交一次，失焦或弹窗时不发送。
+- [x] 文件 UI：路径跳转/上一级、虚拟化目录列表、新建/重命名/删除、文本编辑、修改丢弃确认、
+      上传/下载进度与取消；上传/下载拒绝覆盖已有目标，保存替换失败保留并恢复原文件。
+- [x] 主机编辑与身份重选、保存失败回滚、稳定的异步会话索引、重连、关闭时的数据保护；
+      每条转发规则绑定主机，可并行运行多条，按规则单独停止。
+- [x] 文件/会话/指纹确认使用组件库 M3 模态框：Escape 关闭、焦点限制在弹窗内、关闭后返回原焦点；
+      证据：`docs/screenshots/ssh-dialog.png`。
+- [x] 最终验收：`cargo fmt --all --check`、Clippy（workspace/all-targets/-D warnings）、
+      `cargo test --workspace`（65 项）、`ADASH_SSH_INTEGRATION=1 cargo test -p adash-ssh --test localhost`（1 项）、SDK 测试（13 项）、
+      原生窗口截图（主页、资源、流程、主机、身份、片段、转发、设置、真实 SSH 终端/文件/监控/指纹/模态框）。
 - [x] SDK 内置代理（`agent/runtime` + `agent-sdk`），GUI 不再连接外部 pi CLI；10 个云工具白名单。
 - [x] catussh 设置移植（通用/终端/连接/关于），浅色/深色主题、终端字体与字号、超时、监控间隔、指纹清除。
 - [x] 应用 SVG 图标、桌面入口与 hicolor 安装；每次构建更新启动器。

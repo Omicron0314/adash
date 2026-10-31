@@ -187,7 +187,10 @@ pub struct Adash {
         Option<std::sync::mpsc::Receiver<(String, Result<adash_ssh::ExecResult, String>)>>,
     pub batch_running: usize,
     pub pending_remote_delete: Option<(usize, PathBuf)>,
+    pub pending_remote_name: Option<(usize, Option<PathBuf>)>,
+    pub pending_discard_file: Option<(usize, PathBuf)>,
     pub pending_forget_keys: bool,
+    last_dialog: Option<(&'static str, String, &'static str, bool)>,
     /// One-shot message under the title bar.
     pub notice: Option<String>,
     /// Whether a refresh is in flight.
@@ -222,17 +225,12 @@ impl Adash {
         let profile_path = crate::agent::data_dir()
             .unwrap_or_default()
             .join("hosts.json");
-        let (profiles, profile_error) = match ProfileStore::open(profile_path) {
+        let (profiles, profile_error) = match ProfileStore::open(profile_path.clone()) {
             Ok(store) => (store, None),
-            Err(error) => {
-                let fallback =
-                    std::env::temp_dir().join(format!("adash-hosts-{}.json", std::process::id()));
-                let store = ProfileStore::open(fallback).unwrap_or_else(|_| {
-                    ProfileStore::open(PathBuf::from("/tmp/adash-hosts.json"))
-                        .expect("temp profile store")
-                });
-                (store, Some(format!("{error:#}")))
-            }
+            Err(error) => (
+                ProfileStore::unavailable(profile_path),
+                Some(format!("{error:#}")),
+            ),
         };
         let host_form = HostForm::new(window, cx);
         let identity_form = IdentityForm::new(window, cx);
@@ -280,7 +278,10 @@ impl Adash {
             batch_rx: None,
             batch_running: 0,
             pending_remote_delete: None,
+            pending_remote_name: None,
+            pending_discard_file: None,
             pending_forget_keys: false,
+            last_dialog: None,
             notice: None,
             loading: false,
             last_refresh: 0,
@@ -348,11 +349,20 @@ impl Adash {
         let view = cx.entity().downgrade();
         window.on_window_should_close(cx, move |_, cx| {
             view.update(cx, |this, cx| {
-                if this.store.data.settings.confirm_close
-                    && this
-                        .sessions
-                        .iter()
-                        .any(|session| session.connected || session.terminal.is_some())
+                if this
+                    .sessions
+                    .iter()
+                    .enumerate()
+                    .any(|(index, session)| !session.closed && this.editor_dirty(index, cx))
+                    || this.store.data.settings.confirm_close
+                        && this.sessions.iter().any(|session| {
+                            !session.closed
+                                && (session.connected
+                                    || session
+                                        .terminal
+                                        .as_ref()
+                                        .is_some_and(adash_ssh::Terminal::is_connected))
+                        })
                 {
                     this.pending_exit = true;
                     cx.notify();
@@ -440,6 +450,25 @@ impl Adash {
             _ => Page::Home,
         };
 
+        if let Ok(id) = std::env::var("ADASH_START_HOST") {
+            self.open_host(&id, window, cx);
+            if let Some(index) = self.active_session
+                && let Some(session) = self.sessions.get_mut(index)
+                && let Ok(path) = std::env::var("ADASH_START_REMOTE_DIR")
+            {
+                session.directory = PathBuf::from(path);
+            }
+            if let Ok(tab) = std::env::var("ADASH_START_SESSION_TAB") {
+                self.session_tab = tab.parse::<usize>().unwrap_or(0).min(2);
+            }
+            // Demo hook: show a confirmation surface so its layout and focus
+            // trap can be checked in a native capture. It performs no change.
+            if std::env::var("ADASH_DEMO_DIALOG").is_ok()
+                && let Some(index) = self.active_session
+            {
+                self.begin_remote_name(index, None, window, cx);
+            }
+        }
         // Demo/screenshot hooks: run one local question and start a replay so
         // the state is reproducible without clicking. Both are read-only.
         if let Ok(question) = std::env::var("ADASH_DEMO_ASK") {
@@ -490,6 +519,11 @@ impl Adash {
 
     /// Send whatever is in the chat input.
     pub fn send_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.agent.streaming {
+            self.notice = Some("正在生成回答；可点击「停止」后再发送".into());
+            cx.notify();
+            return;
+        }
         let value = self.input.read(cx).value().trim().to_owned();
         if value.is_empty() {
             return;
@@ -501,6 +535,11 @@ impl Adash {
 
     /// Ask the agent (or the local responder) one question.
     pub fn ask(&mut self, text: String, cx: &mut Context<Self>) {
+        if self.agent.streaming {
+            self.notice = Some("请等待当前回答完成，或点击停止".into());
+            cx.notify();
+            return;
+        }
         self.messages.push(ChatMessage::user(text.clone()));
         if self.agent.prompt(&text) {
             self.messages.push(ChatMessage::agent("", false));
@@ -573,7 +612,11 @@ impl Adash {
                     message.text = answer;
                     message.offline = true;
                     message.notes = notes;
-                    message.notes.push(format!("模型不可用：{reason}"));
+                    message.notes.push(if reason.starts_with("模型不可用") {
+                        reason
+                    } else {
+                        format!("模型不可用：{reason}")
+                    });
                 }
                 cx.notify();
             }
@@ -691,7 +734,7 @@ impl Adash {
         if let Some(index) = self
             .sessions
             .iter()
-            .position(|session| session.host.id == id)
+            .position(|session| !session.closed && session.host.id == id)
         {
             self.page = Page::Session(index);
             cx.notify();
@@ -789,7 +832,7 @@ impl Adash {
                 ));
             }
             lines.push("已生成计划卡片，确认后我会记录执行。".to_owned());
-            notes.push("ucloud_plan_optimize".to_owned());
+            notes.push("本地计划 · ucloud_plan_optimize".to_owned());
             self.store.insert_plan(plan);
             let _ = self.store.save();
             return (lines.join("\n"), notes);
@@ -815,7 +858,7 @@ impl Adash {
                 lines.push(format!("· {}（{}）", node.label, node.kind_label()));
             }
             lines.push("切到「AI 流程」页可以看到图，并能回放部署顺序。".to_owned());
-            notes.push("ucloud_flow".to_owned());
+            notes.push("本地读取 · ucloud_flow".to_owned());
             return (lines.join("\n"), notes);
         }
 
@@ -834,7 +877,7 @@ impl Adash {
             for (project, cents) in self.billing.by_project.iter().take(5) {
                 lines.push(format!("· {project}：{}", money(*cents)));
             }
-            notes.push("ucloud_billing".to_owned());
+            notes.push("本地读取 · ucloud_billing".to_owned());
             return (lines.join("\n"), notes);
         }
 
@@ -857,7 +900,7 @@ impl Adash {
             let delta = plan.monthly_delta_text();
             self.store.insert_plan(plan);
             let _ = self.store.save();
-            notes.push("ucloud_plan_deploy".to_owned());
+            notes.push("本地计划 · ucloud_plan_deploy".to_owned());
             return (
                 format!(
                     "可以。方案：1 台 2C/4GiB 云主机（cn-bj2），月成本 {delta}。计划卡片已生成，确认后执行。"
@@ -878,7 +921,7 @@ impl Adash {
         lines.push(
             "可以问我：资源盘点、账单、预算、这个项目用了哪些服务、有没有浪费的钱。".to_owned(),
         );
-        notes.push("ucloud_inventory".to_owned());
+        notes.push("本地读取 · ucloud_inventory".to_owned());
         (lines.join("\n"), notes)
     }
 
@@ -903,6 +946,20 @@ fn welcome(mode: Mode) -> String {
 
 impl Render for Adash {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let modal = self.modal_open();
+        for (index, session) in self.sessions.iter().enumerate() {
+            let enabled = !modal
+                && self.page == Page::Session(index)
+                && self.session_tab == 0
+                && !session.closed
+                && session
+                    .terminal
+                    .as_ref()
+                    .is_some_and(adash_ssh::Terminal::is_connected);
+            session
+                .terminal_input
+                .update(cx, |input, _| input.enabled = enabled);
+        }
         div()
             .flex()
             .flex_col()
@@ -918,27 +975,62 @@ impl Render for Adash {
                     .child(self.render_sidebar(cx))
                     .child(self.render_content(window, cx)),
             )
-            .children(self.render_overlay(cx))
+            .child(self.render_overlay(cx))
     }
 }
 
 impl Adash {
+    pub(crate) fn modal_open(&self) -> bool {
+        self.pending_close.is_some()
+            || self.pending_exit
+            || self.pending_remote_delete.is_some()
+            || self.pending_remote_name.is_some()
+            || self.pending_discard_file.is_some()
+            || self.pending_forget_keys
+    }
     /// Modal confirmations that must not proceed silently: closing live
     /// sessions, deleting a remote file, forgetting host keys.
-    fn render_overlay(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    fn render_overlay(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let open = self.modal_open();
+        let close_dirty = self
+            .sessions
+            .iter()
+            .enumerate()
+            .any(|(index, session)| !session.closed && self.editor_dirty(index, cx));
         let (title, body, confirm_label, destructive) = if self.pending_exit {
             (
-                "还有活动会话",
+                if close_dirty {
+                    "还有未保存的修改"
+                } else {
+                    "还有活动会话"
+                },
                 format!(
-                    "当前有 {} 个已连接的主机会话，关闭窗口会断开它们。",
+                    "当前有 {} 个主机会话。关闭窗口会断开连接，未保存的文件修改将被放弃。",
                     self.sessions
                         .iter()
-                        .filter(|session| session.connected)
+                        .filter(|session| !session.closed)
                         .count()
                 ),
                 "关闭窗口",
                 true,
             )
+        } else if let Some((_, path)) = &self.pending_discard_file {
+            (
+                "未保存的修改",
+                format!("放弃当前文件的修改并打开 {}？", path.display()),
+                "放弃修改并打开",
+                true,
+            )
+        } else if let Some((_, path)) = &self.pending_remote_name {
+            match path {
+                Some(path) => (
+                    "重命名",
+                    format!("{} 的新名称：", path.display()),
+                    "重命名",
+                    false,
+                ),
+                None => ("新建远程目录", "目录名称：".into(), "创建目录", false),
+            }
         } else if let Some((_, path)) = &self.pending_remote_delete {
             (
                 "删除远程文件",
@@ -953,7 +1045,7 @@ impl Adash {
                 .map_or_else(|| "会话".to_owned(), |session| session.host.name.clone());
             (
                 "关闭会话",
-                format!("关闭 {name} 的终端与转发连接？"),
+                format!("关闭 {name} 的终端与转发连接？未保存的文件修改将被放弃。"),
                 "关闭会话",
                 true,
             )
@@ -965,87 +1057,95 @@ impl Adash {
                 true,
             )
         } else {
-            return None;
+            self.last_dialog
+                .clone()
+                .unwrap_or(("", String::new(), "", false))
         };
-        let card = div()
-            .flex()
-            .flex_col()
-            .gap(rem(12.))
-            .w(rem(420.))
-            .p(rem(24.))
-            .rounded(rem(28.))
-            .bg(color(ColorRole::SURFACE_CONTAINER_LOWEST))
-            .child(
+        if open {
+            self.last_dialog = Some((title, body.clone(), confirm_label, destructive));
+        }
+        let view = cx.entity().downgrade();
+        let mut dialog = MaterialDialog::new("ssh-confirmation")
+            .modal(open)
+            .width(420.)
+            .animation(DialogAnimation::Fade)
+            .dismiss_on_scrim(false)
+            .headline(title)
+            .supporting_text(body)
+            .on_dismiss(move |_, cx| {
+                let _ = view.update(cx, |this, cx| {
+                    this.cancel_overlay(cx);
+                });
+            });
+        if let Some((index, _)) = &self.pending_remote_name
+            && let Some(session) = self.sessions.get(*index)
+        {
+            dialog = dialog.content(
                 div()
-                    .text_size(rem(22.))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child(title),
-            )
-            .child(
-                div()
-                    .text_size(TEXT_BODY)
-                    .text_color(color(ColorRole::ON_SURFACE_VARIANT))
-                    .child(body),
-            )
-            .child(
-                div()
-                    .flex()
-                    .justify_end()
-                    .gap(rem(8.))
-                    .child(widgets::text_button(
-                        "overlay-cancel",
-                        "取消",
-                        cx.listener(|this, _, _, cx| {
-                            this.pending_exit = false;
-                            this.pending_close = None;
-                            this.pending_remote_delete = None;
-                            this.pending_forget_keys = false;
-                            cx.notify();
-                        }),
-                    ))
-                    .child({
-                        let _ = destructive;
-                        widgets::filled_button(
-                            "overlay-confirm",
-                            confirm_label,
-                            cx.listener(move |this, _, window, cx| {
-                                if this.pending_exit {
-                                    this.pending_exit = false;
-                                    for session in &mut this.sessions {
-                                        if let Some(terminal) = session.terminal.take() {
-                                            terminal.close();
-                                        }
-                                        if let Some(forward) = session.forward.take() {
-                                            forward.stop();
-                                        }
-                                    }
-                                    window.remove_window();
-                                } else if this.pending_remote_delete.is_some() {
-                                    this.confirm_remote_delete(cx);
-                                } else if let Some(index) = this.pending_close.take() {
-                                    this.finish_close_session(index, cx);
-                                } else if this.pending_forget_keys {
-                                    this.profiles.data.known_hosts.clear();
-                                    let _ = this.profiles.save();
-                                    this.pending_forget_keys = false;
-                                    this.notice = Some("已清除主机指纹".to_owned());
-                                    cx.notify();
-                                }
-                            }),
-                        )
-                    }),
+                    .rounded(rem(24.))
+                    .border_1()
+                    .border_color(color(ColorRole::OUTLINE_VARIANT))
+                    .child(widgets::rounded_input(
+                        "remote-operation-name",
+                        &session.remote_name,
+                        Some("名称"),
+                    )),
             );
-        Some(
-            div()
-                .absolute()
-                .inset_0()
-                .flex()
-                .items_center()
-                .justify_center()
-                .bg(gpui::black().opacity(0.32))
-                .child(card)
-                .into_any_element(),
-        )
+        }
+        let _ = destructive;
+        dialog
+            .action(widgets::text_button(
+                "overlay-cancel",
+                "取消",
+                cx.listener(|this, _, _, cx| this.cancel_overlay(cx)),
+            ))
+            .action(widgets::filled_button(
+                "overlay-confirm",
+                confirm_label,
+                cx.listener(|this, _, window, cx| {
+                    if this.pending_exit {
+                        this.pending_exit = false;
+                        for session in &mut this.sessions {
+                            if let Some(terminal) = session.terminal.take() {
+                                terminal.close();
+                            }
+                            session.forwards.clear();
+                            session.forward_rx.clear();
+                        }
+                        window.remove_window();
+                    } else if let Some((index, path)) = this.pending_discard_file.take() {
+                        this.request_file(index, path, cx);
+                    } else if this.pending_remote_name.is_some() {
+                        this.confirm_remote_name(cx);
+                    } else if this.pending_remote_delete.is_some() {
+                        this.confirm_remote_delete(cx);
+                    } else if let Some(index) = this.pending_close.take() {
+                        this.finish_close_session(index, cx);
+                    } else if this.pending_forget_keys {
+                        if let Err(error) = this
+                            .profiles
+                            .update(|profiles| profiles.known_hosts.clear())
+                        {
+                            this.notice = Some(format!("清除失败：{error:#}"));
+                        } else {
+                            this.pending_forget_keys = false;
+                            this.notice = Some("已清除主机指纹".into());
+                        }
+                        cx.notify();
+                    }
+                }),
+            ))
+            .into_any_element()
+    }
+
+    fn cancel_overlay(&mut self, cx: &mut Context<Self>) {
+        self.pending_exit = false;
+        self.pending_close = None;
+        self.pending_remote_delete = None;
+        self.pending_remote_name = None;
+        self.pending_discard_file = None;
+        self.pending_forget_keys = false;
+        cx.notify();
     }
 
     fn render_titlebar(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -1161,10 +1261,25 @@ impl Adash {
         }
 
         if !self.sessions.is_empty() {
-            for (index, session) in self.sessions.iter().enumerate() {
+            for (index, session) in self
+                .sessions
+                .iter()
+                .enumerate()
+                .filter(|(_, session)| !session.closed)
+            {
                 rail = rail.child(self.nav_item(
                     format!("session-{index}"),
-                    session.host.name.clone(),
+                    {
+                        let limit = if session.host.name.is_ascii() { 8 } else { 5 };
+                        if session.host.name.chars().count() > limit {
+                            format!(
+                                "{}…",
+                                session.host.name.chars().take(limit).collect::<String>()
+                            )
+                        } else {
+                            session.host.name.clone()
+                        }
+                    },
                     self.page == Page::Session(index),
                     Page::Session(index),
                     cx,

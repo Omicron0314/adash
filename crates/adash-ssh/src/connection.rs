@@ -147,8 +147,12 @@ impl Connection {
         let mut output = Vec::new();
         channel
             .by_ref()
-            .take(4 * 1024 * 1024)
+            .take(4 * 1024 * 1024 + 1)
             .read_to_end(&mut output)?;
+        if output.len() > 4 * 1024 * 1024 {
+            let _ = channel.close();
+            bail!("命令输出超过 4 MiB，已停止读取");
+        }
         channel.close()?;
         channel.wait_close()?;
         Ok(ExecResult {
