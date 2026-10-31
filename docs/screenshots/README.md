@@ -27,6 +27,9 @@
 | 远程目录确认（M3 模态框） | [ssh-dialog.png](ssh-dialog.png) | 1440×900 |
 | AI 未配置时的本地应答 | [agent-fallback.png](agent-fallback.png) | 1440×900 |
 
+SSH 相关页面截图使用 `scripts/demo-ssh-service.py` 写入的临时回环演示主机；密钥/路径只在本机临时数据中。
+
+
 复现（脚本自行构建测试版；niri 与 ImageMagick 为可选适配器）：
 
 ```sh

@@ -92,7 +92,8 @@ npm --prefix agent/runtime test
 
 SSH 集成测试使用临时密钥与回环 sshd（需要 `sshd`、`ssh-keygen`；SFTP 用内置 `internal-sftp`）；
 SDK 测试使用回环模型端点与真实 Rust CLI，不调用付费模型或云写接口。
-原生窗口可用 `python3 scripts/ssh-smoke.py --capture /tmp/adash-ssh.png` 检查，退出后清理临时服务与数据。
+SSH 演示：`python3 scripts/demo-ssh-service.py` 会启动回环临时 sshd，并写入 Demo 主机、身份、片段和 HTTP 转发；
+`python3 scripts/demo-ssh-service.py --stop` 停止。
 
 ## 路径与开发验证
 

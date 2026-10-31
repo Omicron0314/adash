@@ -107,6 +107,37 @@ Live 模式下确认会被明确拒绝，不会假装部署成功。
 3. 仓库分析只给清单摘要，不把源码或密钥送进模型
 4. Mock 与 Live 在标题栏和账户页都可见
 
+## 6. Shell / 身份 / 片段 / 端口转发（可选，60s）
+
+赛前或现场先启动服务，再打开 adash：
+
+```sh
+python3 scripts/demo-ssh-service.py
+```
+
+它会启动仅监听 `127.0.0.1` 的临时 sshd，并写入：
+
+- 主机：**Demo Local SSH**
+- 身份：**Demo Local Key**（演示私钥文件，不使用真实账号）
+- 片段：运行时间、工作目录、磁盘、健康检查
+- 端口转发：**Demo HTTP** → 演示静态站点
+
+点“主机 → Demo Local SSH → 连接”：
+
+- 终端显示演示 shell，工作目录是 `~/.local/share/adash/demo-ssh/work`
+- “文件”可浏览/编辑 README、日志和配置示例
+- “监控”显示本机 `/proc`/`df` 实际采样
+- “身份”“片段”“端口转发”页都有内容，可执行片段和启动转发
+- 终端里可直接试 `ls -la`、`cat logs/app.log`
+
+停止服务：
+
+```sh
+python3 scripts/demo-ssh-service.py --stop
+```
+
+注意：这是本机用户权限的回环演示服务，不是安全沙箱；不要把它当作生产 SSH 隔离方案。
+
 ## 备用 2 分钟版
 
 主页概览（20 资源）→ AI 流程 Shop API 回放 → 寻找省钱机会（¥500.80）→ 确认 Mock 释放 →
@@ -117,5 +148,8 @@ Live 模式下确认会被明确拒绝，不会假装部署成功。
 - AI 未配置：仍可演示资源、流程图、优化计划、账户页；仓库部署用 CLI 说明计划生成，
   或在赛前配置好 AI。
 - 网络不可用：用本机 `fixtures/demo/shop-api`，不要用 GitHub 地址。
-- SSH：可另开 `python3 scripts/ssh-smoke.py` 使用临时回环 sshd 展示真实终端/SFTP/监控，
-  不要把它当作主演示进程。
+- SSH：运行 `python3 scripts/demo-ssh-service.py`，会启动仅监听 127.0.0.1 的临时 sshd，
+  自动写入“Demo Local SSH”主机、Demo 私钥身份、4 个片段和 Demo HTTP 端口转发规则。
+  回到“主机”点 Demo Local SSH → 连接，即可展示终端、SFTP、监控、身份、片段和转发。
+  停止：`python3 scripts/demo-ssh-service.py --stop`。服务使用独立 demo 工作目录，
+  不会修改系统 sshd/账号；它仍是本机用户的 shell，不是安全隔离沙箱。
