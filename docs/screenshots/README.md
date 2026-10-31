@@ -20,8 +20,8 @@
 | 身份 | [identities.png](identities.png) | 1440×900 |
 | 片段 | [snippets.png](snippets.png) | 1440×900 |
 | 端口转发 | [port-forward.png](port-forward.png) | 1440×900 |
+| 账户 · UCloud 与 AI 服务 | [account.png](account.png) | 1440×900 |
 | 设置 · 通用 / 终端 / 连接 | [settings-0.png](settings-0.png) · [settings-1.png](settings-1.png) · [settings-2.png](settings-2.png) | 1440×900 |
-| 设置 · AI 服务配置 | [settings-ai.png](settings-ai.png) | 1440×900 |
 | 实际 SSH 终端 / SFTP / 监控 | [ssh-terminal.png](ssh-terminal.png) · [ssh-files.png](ssh-files.png) · [ssh-monitor.png](ssh-monitor.png) | 1440×900 |
 | 首次连接与完整指纹 | [ssh-first-connection.png](ssh-first-connection.png) | 1440×900 |
 | 远程目录确认（M3 模态框） | [ssh-dialog.png](ssh-dialog.png) | 1440×900 |
@@ -36,7 +36,7 @@ python3 scripts/capture-ui.py flows docs/screenshots/flows.png
 python3 scripts/capture-ui.py home docs/screenshots/overview-1280.png \
   --width 1280 --height 800 --ask '有浪费的钱吗？'
 python3 scripts/capture-ui.py settings docs/screenshots/settings-1.png --settings terminal
-python3 scripts/capture-ui.py settings docs/screenshots/settings-ai.png --settings ai --online
+python3 scripts/capture-ui.py account docs/screenshots/account.png --online
 python3 scripts/capture-ui.py home docs/screenshots/overview-dark.png --appearance dark
 ```
 

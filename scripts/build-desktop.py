@@ -75,7 +75,6 @@ def main():
         '  case "$APP_FILE" in /*) ;; *) APP_FILE="$APP_DIR/$APP_FILE" ;; esac',
         'done',
         'APP_DIR=$(CDPATH= cd -P -- "$(dirname -- "$APP_FILE")" && pwd)',
-        ': "${UDASH_MOCK:=1}"', 'export UDASH_MOCK',
         'exec "$APP_DIR/' + app.name + '" "$@"', '',
     ]), 0o755)
     desktop = '\n'.join([

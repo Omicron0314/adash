@@ -107,7 +107,7 @@ impl Agent {
             Err(error) => return Self::offline(error),
         };
         if settings.endpoint.is_empty() {
-            return Self::offline("请在设置 → AI 中填写 Endpoint、API key 和模型".into());
+            return Self::offline("请在账户页填写 Endpoint、API key 和模型".into());
         }
         if let Err(error) = settings.validate() {
             return Self::offline(error);
@@ -172,7 +172,7 @@ impl Agent {
             script,
             root,
             tool,
-            mock: mode == ucloud_api::Mode::Mock && ucloud_api::transport::mock_enabled(),
+            mock: mode == ucloud_api::Mode::Mock,
             session_dir,
         };
         let key = settings.secret()?;

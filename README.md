@@ -27,7 +27,8 @@
 ![对话与账户概览](docs/screenshots/overview.png)
 
 [云资源](docs/screenshots/resources.png) · [AI 流程](docs/screenshots/flows.png) ·
-[1280×800 计划卡片](docs/screenshots/overview-1280.png) · [真实 SSH 终端](docs/screenshots/ssh-terminal.png) ·
+[1280×800 计划卡片](docs/screenshots/overview-1280.png) · [账户](docs/screenshots/account.png) ·
+[真实 SSH 终端](docs/screenshots/ssh-terminal.png) ·
 [SFTP 文件](docs/screenshots/ssh-files.png) · [截图复现方法](docs/screenshots/README.md)
 
 ## 快速开始（Mock，不花钱）
@@ -41,22 +42,27 @@ python3 scripts/build-desktop.py
 生成的 `target/desktop/`（以 Cargo 实际输出目录为准）包含程序、工具、SDK 运行时与依赖，
 可整体移动后运行其中的 `launch-adash`。桌面入口在安装时按当前输出位置生成；
 移动程序目录后可重新运行构建脚本指定 `--output` 更新入口。`--no-install` 只生成程序目录。
-入口默认 Mock，可用 `UDASH_MOCK=0` 显式选择真实账户读取。
+未配置云账户时默认使用 Mock；在“账户”页保存并启用后，启动时自动连接真实账户。
+`UDASH_MOCK=1` 可强制 Mock，`UDASH_MOCK=0` 可强制 Live。
 
-首次打开后进入 **设置 → AI**，填写服务的 Endpoint（Base URL）、API key 和模型 ID，
-选择 Chat Completions、Responses 或 Anthropic Messages 协议，然后保存并连接。
-API key 保存在系统钥匙串，配置文件只记录密钥引用；更换 Endpoint 需重新填写密钥。
-上下文长度和最大输出长度也可设置。
+首次打开后进入 **账户**：
+
+- **UCloud 云账户**：填写 PublicKey、PrivateKey、ProjectId（可选）和地域，保存前会做一次只读余额校验；
+  PrivateKey 只进系统钥匙串，换 PublicKey 必须重填。
+- **AI 服务**：填写 Endpoint（Base URL）、API key 和模型 ID，选择 Chat Completions、Responses
+  或 Anthropic Messages 协议。API key 也只进系统钥匙串。
+
+两边的非密钥配置都只保存引用/元数据，不保存密钥；可从账户页切回 Mock 或移除云账户。
 
 运行需要 Node.js 及当前平台的 GPUI 系统依赖；无需 pi CLI 或个人 pi 配置。
-应用仅使用用户在设置中保存的 AI 服务，不从 `~/.pi`、`ADASH_MODEL` 自动选择模型。
+应用仅使用用户在账户页保存的 AI 服务，不从 `~/.pi`、`ADASH_MODEL` 自动选择模型。
 SDK 不可用、未配置 AI 或模型报错时，仍能用本地领域数据回答资源与账单问题。
 Mock 数据内置于二进制，运行时无需原始 checkout 或 fixtures 目录。
 Mock 账户里有一台「shop-api」项目（2 台主机 + MySQL + Redis + ULB + EIP + 云盘）、
 一个孤儿 EIP 和一块未挂载云盘，`adash-tool reset` 可恢复基线并写入一条可回放的部署记录。
 
-真实账户读取：设置 `UCLOUD_PUBLIC_KEY` / `UCLOUD_PRIVATE_KEY` / `UCLOUD_PROJECT_ID`，
-不要设置 `UDASH_MOCK`。UCloud 钥匙串读取及 Live 写操作尚未实现；Mock 计划执行目前记录流程历史，
+真实账户也可以在环境变量中提供 `UCLOUD_PUBLIC_KEY` / `UCLOUD_PRIVATE_KEY` / `UCLOUD_PROJECT_ID`
+并设置 `UDASH_MOCK=0`，适合临时验证。Live 写操作尚未实现；Mock 计划执行目前记录流程历史，
 不会实际创建或删除库存资源。
 
 ## 验证

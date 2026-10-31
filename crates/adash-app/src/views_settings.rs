@@ -1,6 +1,6 @@
 //! Settings: the catussh sections that map to real capabilities here.
 //!
-//! General / Terminal / Connection / AI. Each row controls a real capability.
+//! General / Terminal / Connection. Account and AI configuration live on the Account page.
 
 use crate::app::Adash;
 use crate::widgets;
@@ -9,7 +9,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_kit_material::prelude::*;
 
-const CATEGORIES: [&str; 4] = ["通用", "终端", "连接", "AI"];
+const CATEGORIES: [&str; 3] = ["通用", "终端", "连接"];
 
 impl Adash {
     /// Settings page.
@@ -50,8 +50,7 @@ impl Adash {
         let body = match category {
             0 => self.settings_general(cx),
             1 => self.settings_terminal(window, cx),
-            2 => self.settings_connection(cx),
-            _ => self.settings_ai(cx),
+            _ => self.settings_connection(cx),
         };
 
         div()
@@ -383,200 +382,6 @@ impl Adash {
                     .child(self.profiles.path().display().to_string()),
             ))
             .into_any_element()
-    }
-
-    fn settings_ai(&self, cx: &mut Context<Self>) -> AnyElement {
-        let mut protocols = div().flex().flex_wrap().gap(rem(8.));
-        for (id, label) in [
-            ("openai-completions", "Chat Completions"),
-            ("openai-responses", "Responses"),
-            ("anthropic-messages", "Anthropic Messages"),
-        ] {
-            protocols = protocols.child(widgets::chip(
-                format!("ai-api-{id}"),
-                label,
-                self.ai_form.api == id,
-                cx.listener(move |this, selected: &bool, _, cx| {
-                    if *selected && !this.ai_saving {
-                        this.ai_form.api = id.into();
-                        cx.notify();
-                    }
-                }),
-            ));
-        }
-        let status = self
-            .agent
-            .offline_reason()
-            .map(ToOwned::to_owned)
-            .or_else(|| self.agent.status.clone())
-            .unwrap_or_else(|| {
-                self.agent
-                    .model
-                    .as_ref()
-                    .map_or("正在连接 AI".into(), |model| {
-                        format!("已配置 · {model}")
-                    })
-            });
-        CardSurface::new(CardVariant::Filled)
-            .bg(color(ColorRole::SURFACE_CONTAINER_LOWEST))
-            .rounded(rem(24.))
-            .p(rem(20.))
-            .gap(rem(16.))
-            .child(widgets::section_header("模型服务"))
-            .child(
-                div().text_size(TEXT_AUX).child(
-                    "填写服务的 Base URL、API key 和模型 ID。保存后重连，并开启新的 AI 会话。",
-                ),
-            )
-            .child(protocols)
-            .child(widgets::labelled_input(
-                "ai-endpoint",
-                "Endpoint（Base URL）",
-                &self.ai_form.endpoint,
-            ))
-            .child(widgets::labelled_input(
-                "ai-model",
-                "模型 ID",
-                &self.ai_form.model,
-            ))
-            .child(widgets::labelled_input(
-                "ai-key",
-                "API key",
-                &self.ai_form.key,
-            ))
-            .child(
-                div()
-                    .text_size(TEXT_AUX)
-                    .text_color(color(ColorRole::ON_SURFACE_VARIANT))
-                    .child(if self.ai_settings.key_id.is_some() {
-                        "密钥已存入系统钥匙串。留空保留当前密钥；更换 Endpoint 需重新填写。"
-                    } else {
-                        "API key 仅保存在系统钥匙串，不写入配置文件或对话。"
-                    }),
-            )
-            .child(
-                div()
-                    .flex()
-                    .gap(rem(12.))
-                    .child(widgets::labelled_input(
-                        "ai-context",
-                        "上下文长度（tokens）",
-                        &self.ai_form.context_window,
-                    ))
-                    .child(widgets::labelled_input(
-                        "ai-output",
-                        "最大输出（tokens）",
-                        &self.ai_form.max_tokens,
-                    )),
-            )
-            .children(
-                self.ai_error
-                    .clone()
-                    .map(|error| widgets::notice(error, true)),
-            )
-            .child(div().text_size(TEXT_AUX).child(status))
-            .child(
-                div()
-                    .flex()
-                    .gap(rem(8.))
-                    .child(
-                        MaterialButton::new("ai-save")
-                            .variant(ButtonVariant::Filled)
-                            .disabled(self.ai_saving || self.agent.streaming)
-                            .on_click(cx.listener(|this, _, window, cx| this.save_ai(window, cx)))
-                            .child(if self.ai_saving {
-                                "正在保存…"
-                            } else {
-                                "保存并连接"
-                            }),
-                    )
-                    .child(
-                        MaterialButton::new("ai-remove")
-                            .variant(ButtonVariant::Text)
-                            .disabled(self.ai_saving || self.agent.streaming)
-                            .on_click(cx.listener(|this, _, window, cx| this.remove_ai(window, cx)))
-                            .child("移除配置与密钥"),
-                    ),
-            )
-            .into_any_element()
-    }
-
-    fn save_ai(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.ai_saving || self.agent.streaming {
-            return;
-        }
-        let mut settings = crate::ai::AiSettings {
-            endpoint: self.ai_form.endpoint.read(cx).value().to_string(),
-            model: self.ai_form.model.read(cx).value().to_string(),
-            api: self.ai_form.api.clone(),
-            key_id: None,
-            context_window: self
-                .ai_form
-                .context_window
-                .read(cx)
-                .value()
-                .trim()
-                .parse()
-                .unwrap_or(0),
-            max_tokens: self
-                .ai_form
-                .max_tokens
-                .read(cx)
-                .value()
-                .trim()
-                .parse()
-                .unwrap_or(0),
-        };
-        if let Err(error) = settings.validate() {
-            self.ai_error = Some(error);
-            cx.notify();
-            return;
-        }
-        let key = zeroize::Zeroizing::new(self.ai_form.key.read(cx).value().to_string());
-        self.ai_saving = true;
-        self.ai_error = None;
-        cx.notify();
-        cx.spawn_in(window, async move |this, cx| {
-            let result = cx
-                .background_spawn(async move { settings.persist(&key) })
-                .await;
-            let _ = this.update_in(cx, |this, window, cx| {
-                this.ai_saving = false;
-                match result {
-                    Ok((settings, warning)) => {
-                        this.ai_settings = settings;
-                        this.ai_form = crate::ai::AiForm::new(&this.ai_settings, window, cx);
-                        this.ai_error = warning;
-                        this.agent = crate::agent::Agent::connect(this.mode);
-                        this.notice = Some("AI 配置已保存，正在连接新会话".into());
-                    }
-                    Err(error) => this.ai_error = Some(error),
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-    fn remove_ai(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.ai_saving || self.agent.streaming {
-            return;
-        }
-        self.ai_saving = true;
-        cx.notify();
-        cx.spawn_in(window, async move |this, cx| {
-            let result = cx
-                .background_spawn(async { crate::ai::AiSettings::remove() })
-                .await;
-            let _ = this.update_in(cx, |this, window, cx| {
-                this.ai_saving = false;
-                this.ai_settings = crate::ai::AiSettings::load().unwrap_or_default();
-                this.ai_form = crate::ai::AiForm::new(&this.ai_settings, window, cx);
-                this.ai_error = result.err();
-                this.agent = crate::agent::Agent::connect(this.mode);
-                cx.notify();
-            });
-        })
-        .detach();
     }
 }
 

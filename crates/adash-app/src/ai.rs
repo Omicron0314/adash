@@ -99,10 +99,7 @@ impl AiSettings {
         Ok(())
     }
     pub fn secret(&self) -> Result<Zeroizing<String>, String> {
-        let id = self
-            .key_id
-            .as_deref()
-            .ok_or("请在设置 → AI 中填写 API key")?;
+        let id = self.key_id.as_deref().ok_or("请在账户页填写 API key")?;
         SystemSecrets.get(id)
     }
     pub fn persist(self, key: &str) -> Result<(Self, Option<String>), String> {

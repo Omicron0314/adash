@@ -39,7 +39,7 @@
 | `transport` | HTTP、重试、超时、`RetCode != 0` 转 `Error::Api` |
 | `paths` | 接口名常量 + 文档链接（`https://docs.ucloud.cn/api/...`） |
 | `models` | 各产品响应的 `serde` 类型，字段名保持 UCloud 原样（PascalCase，用 `rename`） |
-| `credentials` | 环境变量读取，私钥不进日志（`Debug` 手写脱敏）；UCloud 钥匙串读取待实现 |
+| `credentials` | 环境变量或账户页保存的 profile；私钥只进钥匙串，`Debug` 脱敏 |
 | `mock` | `UDASH_MOCK=1` 时读编译内置的样例；`UDASH_MOCK_DIR` 可覆盖，行为与真实接口一致 |
 | `client` | 对外门面：`inventory()`、`billing()`、`price()`、`regions()`… |
 
@@ -84,7 +84,7 @@
 `ucloud_*` 扩展、skills 与追加系统提示；工具白名单固定为 10 个 `ucloud_*`，没有 shell/edit/write。
 宿主接收 `start` / `prompt` / `abort` / `set_model` / `ui_response` / `dispose`，输出 GUI 所需的 SDK 事件投影。
 文本更新仅传本次 delta，避免反复传送完整消息与 provider 元数据；模型错误显式进入错误事件。
-模型服务由用户在「设置 → AI」填写：Endpoint、API 协议、模型 ID 与 token 限制存入应用 `ai.json`，
+模型服务由用户在「账户」页填写：Endpoint、API 协议、模型 ID 与 token 限制存入应用 `ai.json`，
 API key 存在系统钥匙串，JSON 仅保存引用。保存失败保留原配置，更换 Endpoint 必须提供新密钥。
 SDK 使用内存凭据和 `modelsPath: null`，注册用户指定的服务与模型；不读取个人 pi 模型/认证配置。
 密钥经私有 stdin 交给宿主，不写入 argv/env/模型元数据；服务错误回显的密钥在事件和会话持久化前脱敏。
@@ -92,6 +92,13 @@ SDK 使用内存凭据和 `modelsPath: null`，注册用户指定的服务与模
 GUI 写入一次性批准，`adash-tool apply` 再校验计划哈希、过期与批准，执行仍在 Rust。
 
 `crates/agent-sdk` 只负责进程生命周期、LF 分帧与事件分类；模型、会话、工具与流式输出都属于 SDK。
+
+### 云账户配置
+
+`ucloud-api::CloudProfile` 保存 PublicKey、ProjectId、Region、Endpoint 和启用状态到 `cloud.json`，
+PrivateKey 只存系统钥匙串。GUI 与 `adash-tool` 共用该 profile，因此 Live 连接时代理工具读取同一账户。
+保存前执行一次只读余额请求；失败不保存。`UDASH_MOCK` 显式覆盖，未设置时已启用 profile 自动 Live，
+否则 Mock。账户页可停用（保留密钥）或移除（删除密钥）。
 
 ### adash-paths 与程序目录
 
@@ -126,6 +133,7 @@ GUI 只通过请求/应答通道交互，已关闭会话保留索引槽位，异
 | `ssh` | 主机/身份/片段/转发状态、连接与终端生命周期、批处理 |
 | `palette` | neko 浅色/深色语义色板，供主题切换使用 |
 | `views_sessions` | 主机、身份、片段、端口转发与会话终端/监控 |
+| `views_account` | 账户页：UCloud 云账户、AI 服务、Live/Mock 切换 |
 | `views_files` | SFTP 目录、传输和文本编辑器 |
 | `terminal_view` / `terminal_input` | VT 行样式、控制键编码、原生 IME 与按会话绑定的输入 |
 | `i18n` | 全部用户可见文案 |
@@ -173,7 +181,7 @@ SDK 已启动但**模型不可用**（没配 API key、provider 报错）时同�
 | 私钥泄漏到模型上下文 | 凭证只在 `ucloud-api` 读取；`adash-tool` 输出脱敏，测试覆盖 |
 | 计划被篡改 | 计划哈希 + 过期时间 + 令牌三方校验 |
 | 代理越权执行 shell | SDK 显式云工具白名单，关闭标准扩展、上下文与提示模板发现 |
-| Mock 数据误连真实账户 | 必须显式清掉 `UDASH_MOCK`；启动时在标题栏显示当前模式 |
+| Mock 数据误连真实账户 | 默认 Mock；只有启用已保存的云账户或显式 `UDASH_MOCK=0` 才 Live；标题栏显示当前模式 |
 
 ## 明确不做（demo 范围）
 

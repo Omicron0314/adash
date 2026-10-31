@@ -11,11 +11,11 @@ from support import ROOT, build_binary, capture, normalize_capture, windows, act
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('page', choices=['home','resources','flows','hosts','identities','snippets','port-forward','settings'])
+    parser.add_argument('page', choices=['home','resources','flows','hosts','identities','snippets','port-forward','account','settings'])
     parser.add_argument('output', type=Path)
     parser.add_argument('--selected', default='')
     parser.add_argument('--flow', default='')
-    parser.add_argument('--settings', choices=['general','terminal','connection','ai'], default='general')
+    parser.add_argument('--settings', choices=['general','terminal','connection'], default='general')
     parser.add_argument('--appearance', choices=['light','dark','system'], default='light')
     parser.add_argument('--ask', default='')
     parser.add_argument('--width', type=int, default=1440)
@@ -36,7 +36,7 @@ def main():
         env = {key: value for key, value in os.environ.items() if not key.startswith(('ADASH_START_', 'ADASH_DEMO_'))}
         env.update(UDASH_MOCK='1', ADASH_DATA_DIR=str(data), ADASH_TOOL=str(tool),
                    ADASH_START_PAGE=args.page,
-                   ADASH_START_SETTINGS=str(['general','terminal','connection','ai'].index(args.settings)),
+                   ADASH_START_SETTINGS=str(['general','terminal','connection'].index(args.settings)),
                    ADASH_DEMO_APPEARANCE=args.appearance,
                    ADASH_START_WIDTH=str(args.width), ADASH_START_HEIGHT=str(args.height))
         for key, value in [('ADASH_START_SELECTED', args.selected), ('ADASH_START_FLOW', args.flow), ('ADASH_DEMO_ASK', args.ask)]:

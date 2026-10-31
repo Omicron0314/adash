@@ -443,13 +443,24 @@ fn reset() -> Result<Value, Error> {
 }
 
 fn doctor() -> Result<Value, Error> {
-    let mock = ucloud_api::transport::mock_enabled();
-    let credentials = std::env::var("UCLOUD_PUBLIC_KEY").is_ok();
+    let client = UcloudClient::from_env();
+    let mode = client.as_ref().map_or("mock", mode_label);
+    let client_error = client.as_ref().err().map(|error| error.to_string());
+    let profile = ucloud_api::CloudProfile::load().ok().flatten();
+    let credentials = std::env::var("UCLOUD_PUBLIC_KEY").is_ok() || profile.is_some();
     let store_path = Store::default_path();
     let resources = adash_paths::resource_dir();
     Ok(json!({
-        "mode": if mock { "mock" } else { "live" },
+        "mode": mode,
+        "client_error": client_error,
         "credentials_present": credentials,
+        "cloud_profile": profile.map(|profile| json!({
+            "enabled": profile.enabled,
+            "public_key": profile.public_key_redacted(),
+            "region": profile.region,
+            "project_id": profile.project_id,
+            "endpoint": profile.endpoint,
+        })),
         "state_path": store_path.display().to_string(),
         "state_exists": store_path.exists(),
         "mock_dir": ucloud_api::transport::mock_dir().map(|path| path.display().to_string()),

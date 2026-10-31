@@ -8,6 +8,7 @@
 //! [`transport`] performs them (live or fixture), [`models`] types the answers,
 //! and [`client`] is the facade other crates use.
 
+pub mod account;
 pub mod client;
 pub mod credentials;
 pub mod error;
@@ -16,6 +17,7 @@ pub mod paths;
 pub mod signature;
 pub mod transport;
 
+pub use account::CloudProfile;
 pub use client::{Mode, UcloudClient};
 pub use credentials::Credentials;
 pub use error::{Error, Result};

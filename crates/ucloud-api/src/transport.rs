@@ -46,11 +46,11 @@ impl std::fmt::Debug for Backend {
 }
 
 impl Backend {
-    /// Build the live backend from the environment.
-    pub fn live_from_env() -> Result<Self> {
-        let credentials = Credentials::from_env()?;
-        let endpoint =
-            std::env::var("UDASH_API_BASE").unwrap_or_else(|_| DEFAULT_ENDPOINT.to_owned());
+    /// Build a live backend from explicit credentials and an optional endpoint.
+    pub fn live(credentials: Credentials, endpoint: Option<String>) -> Result<Self> {
+        let endpoint = endpoint
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| DEFAULT_ENDPOINT.to_owned());
         let http = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(20))
             .connect_timeout(Duration::from_secs(8))
@@ -62,6 +62,12 @@ impl Backend {
             http,
             credentials,
         })
+    }
+
+    /// Build the live backend from the environment.
+    pub fn live_from_env() -> Result<Self> {
+        let credentials = Credentials::from_env()?;
+        Self::live(credentials, std::env::var("UDASH_API_BASE").ok())
     }
 
     /// Build the fixture backend from an explicit directory or embedded fixtures.

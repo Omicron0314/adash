@@ -48,5 +48,7 @@ Live 写操作尚未实现，不加入当前验收。真实凭证不得放入截
 
 - [ ] 完整独立分发包在无 Rust 的系统运行
 - 程序目录由 `python3 scripts/build-desktop.py` 生成，可移动后运行其中的 `launch-adash`；移动后重新安装桌面入口。
-- [ ] AI 设置保存后实际请求使用填写的 Endpoint/模型；重启保留配置，API key 未出现在 `ai.json`/日志/会话中
-- [ ] 更换 Endpoint 时留空密钥会被拒绝，填写新密钥后能连接；移除配置后回到本地应答
+- [ ] 账户页 AI 设置保存后实际请求使用填写的 Endpoint/模型；重启保留配置，API key 未出现在 `ai.json`/日志/会话中
+- [ ] 账户页 UCloud 填写 PublicKey/PrivateKey/地域，保存前的只读余额校验成功；重启后自动 Live
+- [ ] UCloud 更换 PublicKey 或 Endpoint 时留空 PrivateKey 被拒绝；切换 Mock 后保留凭据，移除后 Mock 且钥匙串条目消失
+- [ ] 账户页 AI 更换 Endpoint 时留空密钥被拒绝，填写新密钥后能连接；移除配置后回到本地应答

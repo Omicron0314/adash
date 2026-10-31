@@ -59,7 +59,7 @@ Rust workspace，GPUI 桌面应用，Material 3 Expressive 组件来自
   Rust 通过 `agent-sdk` 的 JSONL 边界与它通信，不启动、也不连接外部 `pi` CLI 或已有 pi 会话。
 - **SDK 使用显式工具白名单**：`noExtensions`/`noSkills`/`noContextFiles`/`noPromptTemplates` 关掉标准发现，只加载本仓库的
   `ucloud_*` 工具与 skill；没有 bash/edit/write。会话存在应用数据目录，凭证不进入模型上下文。
-- AI 服务必须来自应用设置中的用户输入；禁止自动继承个人 pi 凭据/默认模型。密钥写系统钥匙串，
+- AI 服务必须来自账户页中的用户输入；UCloud 凭证来自账户页或显式环境变量；禁止自动继承个人 pi 凭据/默认模型。密钥写系统钥匙串，
   不写 JSON、argv、环境变量或模型上下文；用户更改 Endpoint 时不能自动复用旧密钥。
 - **三个页面共享 `adash-core` 的类型**，不允许各页面自己解析 UCloud JSON。
 
@@ -78,7 +78,7 @@ Rust workspace，GPUI 桌面应用，Material 3 Expressive 组件来自
    `UCLOUD_PUBLIC_KEY` / `UCLOUD_PRIVATE_KEY` / `UCLOUD_PROJECT_ID`，由 `ucloud-api` 自己读取。
    工具输出、日志、会话文件、错误信息里**不得出现私钥**；改动触及输出路径时要补脱敏测试。
 5. 开发、测试、CI 默认 **Mock 模式**（`UDASH_MOCK=1`，读编译内置的 `fixtures/mock`）。
-   真实账户测试必须显式 `UDASH_LIVE=1` 且只允许 `read` 级接口；任何会产生费用的 live 测试禁止提交。
+   真实账户测试必须显式 `UDASH_MOCK=0`（或启用账户页保存的云账户），且只允许 `read` 级接口；任何会产生费用的 live 测试禁止提交。
 6. 所有由本应用创建的资源都打标签/备注 `adash:<project-slug>`，这是「项目视角」和流程图的依据。
 
 ## 4. UI 规则（GPUI + Material 3）

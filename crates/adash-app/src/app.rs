@@ -27,7 +27,7 @@ use gpui_kit_material::theme;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::time::Duration;
-use ucloud_api::{Mode, UcloudClient};
+use ucloud_api::{CloudProfile, Mode, UcloudClient};
 
 /// A top-level destination.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,7 +46,9 @@ pub enum Page {
     Snippets,
     /// Port forwarding rules.
     PortForward,
-    /// Credentials, theme, language.
+    /// UCloud account and AI service configuration.
+    Account,
+    /// Theme, terminal and SSH settings.
     Settings,
     /// One open host session, by index into [`Adash::sessions`].
     Session(usize),
@@ -68,6 +70,7 @@ impl Page {
             Self::Identities => "identities".to_owned(),
             Self::Snippets => "snippets".to_owned(),
             Self::PortForward => "port-forward".to_owned(),
+            Self::Account => "account".to_owned(),
             Self::Settings => "settings".to_owned(),
             Self::Session(index) => format!("session-{index}"),
         }
@@ -83,6 +86,7 @@ impl Page {
             Self::Identities => nav::IDENTITIES,
             Self::Snippets => nav::SNIPPETS,
             Self::PortForward => nav::PORT_FORWARD,
+            Self::Account => nav::ACCOUNT,
             Self::Settings => nav::SETTINGS,
             Self::Session(_) => nav::HOSTS,
         }
@@ -181,6 +185,11 @@ pub struct Adash {
     pub ai_form: crate::ai::AiForm,
     pub ai_error: Option<String>,
     pub ai_saving: bool,
+    /// Saved UCloud account profile (non-secret fields).
+    pub cloud_profile: Option<CloudProfile>,
+    pub cloud_form: crate::cloud::CloudForm,
+    pub cloud_error: Option<String>,
+    pub cloud_saving: bool,
     /// Last focused SSH session; retained when opening snippets or forwards.
     pub active_session: Option<usize>,
     pub selected_hosts: BTreeSet<String>,
@@ -194,6 +203,7 @@ pub struct Adash {
     pub pending_remote_name: Option<(usize, Option<PathBuf>)>,
     pub pending_discard_file: Option<(usize, PathBuf)>,
     pub pending_forget_keys: bool,
+    pub pending_remove_cloud: bool,
     last_dialog: Option<(&'static str, String, &'static str, bool)>,
     /// One-shot message under the title bar.
     pub notice: Option<String>,
@@ -241,6 +251,11 @@ impl Adash {
             Err(error) => (crate::ai::AiSettings::default(), Some(error)),
         };
         let ai_form = crate::ai::AiForm::new(&ai_settings, window, cx);
+        let (cloud_profile, cloud_error) = match CloudProfile::load() {
+            Ok(profile) => (profile, None),
+            Err(error) => (None, Some(error.to_string())),
+        };
+        let cloud_form = crate::cloud::CloudForm::new(cloud_profile.as_ref(), window, cx);
         let host_form = HostForm::new(window, cx);
         let identity_form = IdentityForm::new(window, cx);
         let snippet_form = SnippetForm::new(window, cx);
@@ -283,6 +298,10 @@ impl Adash {
             ai_form,
             ai_error,
             ai_saving: false,
+            cloud_profile,
+            cloud_form,
+            cloud_error,
+            cloud_saving: false,
             active_session: None,
             selected_hosts: BTreeSet::new(),
             pending_close: None,
@@ -294,6 +313,7 @@ impl Adash {
             pending_remote_name: None,
             pending_discard_file: None,
             pending_forget_keys: false,
+            pending_remove_cloud: false,
             last_dialog: None,
             notice: None,
             loading: false,
@@ -443,7 +463,7 @@ impl Adash {
             self.store.data.settings.appearance = appearance;
         }
         if let Ok(category) = std::env::var("ADASH_START_SETTINGS") {
-            self.settings_category = category.parse::<usize>().unwrap_or(0).min(3);
+            self.settings_category = category.parse::<usize>().unwrap_or(0).min(2);
         }
 
         self.page = match std::env::var("ADASH_START_PAGE").as_deref() {
@@ -454,6 +474,7 @@ impl Adash {
             Ok("identities") => Page::Identities,
             Ok("snippets") => Page::Snippets,
             Ok("port-forward") => Page::PortForward,
+            Ok("account") => Page::Account,
             Ok("session") => {
                 let key = self
                     .selected
@@ -1011,6 +1032,7 @@ impl Adash {
             || self.pending_remote_name.is_some()
             || self.pending_discard_file.is_some()
             || self.pending_forget_keys
+            || self.pending_remove_cloud
     }
     /// Modal confirmations that must not proceed silently: closing live
     /// sessions, deleting a remote file, forgetting host keys.
@@ -1071,6 +1093,13 @@ impl Adash {
                 "关闭会话",
                 format!("关闭 {name} 的终端与转发连接？未保存的文件修改将被放弃。"),
                 "关闭会话",
+                true,
+            )
+        } else if self.pending_remove_cloud {
+            (
+                "移除云账户",
+                "删除保存的 PublicKey、ProjectId、Region 和系统钥匙串中的 PrivateKey？此操作不可撤销。".into(),
+                "移除",
                 true,
             )
         } else if self.pending_forget_keys {
@@ -1145,6 +1174,22 @@ impl Adash {
                         this.confirm_remote_delete(cx);
                     } else if let Some(index) = this.pending_close.take() {
                         this.finish_close_session(index, cx);
+                    } else if this.pending_remove_cloud {
+                        this.pending_remove_cloud = false;
+                        match CloudProfile::remove() {
+                            Ok(()) => {
+                                this.cloud_profile = None;
+                                this.cloud_form = crate::cloud::CloudForm::new(None, window, cx);
+                                this.client = Some(UcloudClient::mock());
+                                this.mode = Mode::Mock;
+                                this.client_error = None;
+                                this.refresh();
+                                this.agent = crate::agent::Agent::connect(Mode::Mock);
+                                this.notice = Some("云账户已移除，当前使用 Mock 数据".into());
+                            }
+                            Err(error) => this.cloud_error = Some(error),
+                        }
+                        cx.notify();
                     } else if this.pending_forget_keys {
                         if let Err(error) = this
                             .profiles
@@ -1169,6 +1214,7 @@ impl Adash {
         self.pending_remote_name = None;
         self.pending_discard_file = None;
         self.pending_forget_keys = false;
+        self.pending_remove_cloud = false;
         cx.notify();
     }
 
@@ -1322,6 +1368,13 @@ impl Adash {
         }
 
         rail = rail.child(div().flex_1());
+        rail = rail.child(self.nav_item(
+            Page::Account.id(),
+            Page::Account.label(),
+            self.page == Page::Account,
+            Page::Account,
+            cx,
+        ));
         rail.child(self.nav_item(
             Page::Settings.id(),
             Page::Settings.label(),
@@ -1350,6 +1403,7 @@ impl Adash {
             Page::Identities => "key",
             Page::Snippets => "code",
             Page::PortForward => "swap_horiz",
+            Page::Account => "account_circle",
             Page::Settings => "tune",
         };
         let item = NavItem::new(
@@ -1383,6 +1437,7 @@ impl Adash {
             Page::Identities => self.render_identities(cx),
             Page::Snippets => self.render_snippets(window, cx),
             Page::PortForward => self.render_port_forward(cx),
+            Page::Account => self.render_account(window, cx),
             Page::Settings => self.render_settings(window, cx),
         };
 

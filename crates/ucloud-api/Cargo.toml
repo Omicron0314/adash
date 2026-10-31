@@ -7,12 +7,14 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+adash-paths.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 sha1 = "0.10"
 base64 = "0.22"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "json"] }
+keyring = { version = "3.6", features = ["sync-secret-service", "crypto-rust"] }
 
 [dev-dependencies]
 serde_json.workspace = true

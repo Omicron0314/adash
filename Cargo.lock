@@ -7329,7 +7329,9 @@ checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 name = "ucloud-api"
 version = "0.1.0"
 dependencies = [
+ "adash-paths",
  "base64 0.22.1",
+ "keyring",
  "reqwest",
  "serde",
  "serde_json",

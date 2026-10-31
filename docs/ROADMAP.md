@@ -24,10 +24,11 @@
 - [x] `mock`：`UDASH_MOCK=1` 全部读接口可跑（`fixtures/mock`，9 份真实结构样例）
 - [x] `client` 门面 + 解析测试
       证据：`cargo test -p ucloud-api` 8 passed；`adash-tool inventory` 输出 11 个资源
-- [ ] 后续：钥匙串读取、US3/轻量主机接口、`GetUHostInstancePrice` 实时价格
+- [x] 账户页/UCloud 配置的钥匙串读取
+- [ ] 后续：US3/轻量主机接口、`GetUHostInstancePrice` 实时价格
 
 验收：`UDASH_MOCK=1 cargo run -p adash-tool -- inventory | jq` 输出全部资源；
-真实账户 `UDASH_LIVE=1` 只跑 read。
+真实账户通过账户页启用，或 `UDASH_MOCK=0` 只跑 read。
 
 ## M2 领域层与执行面（`adash-core` + `adash-tool`）
 
@@ -64,7 +65,7 @@
       证据：`docs/screenshots/{overview,resources,flows,ssh-terminal,settings-0}.png`；
       `overview-1280.png` 覆盖 1280×800 下的省钱计划；fmt/clippy、Rust 测试与 TS typecheck 通过。
 
-- [x] 应用外壳：32px 自绘标题栏、96px 图标导航（对话/云资源/主机/AI 流程/身份/片段/端口转发/设置）、
+- [x] 应用外壳：32px 自绘标题栏、96px 图标导航（对话/云资源/主机/AI 流程/身份/片段/端口转发/账户/设置）、
       Mock·Live 徽标；不再显示「连接主机」分组标题
 - [x] 小窗口标题栏的关闭/最大化按钮保持在可见内容区内，缩放与还原后不裁切；支持的平台显示最小化。
       复用 Kit 标题栏的行内窗口控制，Material Caption 的客户区定位问题可回馈上游，未修改 submodule。
@@ -112,8 +113,10 @@ catussh 的终端 / 文件 / 监控 / 身份 / 片段 / 端口转发全部保留
       `cargo test --workspace`、`ADASH_SSH_INTEGRATION=1 cargo test -p adash-ssh --test localhost`、SDK 测试（14 项）、
       原生窗口截图（主页、资源、流程、主机、身份、片段、转发、设置、真实 SSH 终端/文件/监控/指纹/模态框）。
 - [x] SDK 内置代理（`agent/runtime` + `agent-sdk`），GUI 不再连接外部 pi CLI；10 个云工具白名单。
-- [x] catussh 设置移植（通用/终端/连接/AI），浅色/深色主题、终端字体与字号、超时、监控间隔、指纹清除。
-- [x] 移除“关于”；AI 服务使用用户填写的 Endpoint / API key / 模型 / 协议，凭据只存钥匙串，SDK 不读取个人 pi 配置。
+- [x] catussh 设置移植（通用/终端/连接），浅色/深色主题、终端字体与字号、超时、监控间隔、指纹清除。
+- [x] 独立账户页集中 UCloud 云账户与 AI 服务；UCloud 保存前只读校验、Live/Mock 切换、钥匙串密钥。
+      证据：`docs/screenshots/account.png`；云账户配置序列化不含私钥，SDK/工具使用同一 profile。
+- [x] 移除“关于”；账户页使用用户填写的 UCloud 凭据与 AI Endpoint / API key / 模型 / 协议，凭据只存钥匙串，SDK 不读取个人 pi 配置。
 - [x] 通用资源定位与可移动程序目录；内置 Mock、同目录/PATH 工具发现、测试启动钩子与正常构建隔离。
 - [x] 应用 SVG 图标、桌面入口与 hicolor 安装；每次构建更新启动器。
 - [x] 主页单层 M3 圆角输入框（无左侧图标、无提示文字、Enter 发送），所有表单输入统一圆角。

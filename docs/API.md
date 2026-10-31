@@ -12,7 +12,13 @@
 - 字段名保持 UCloud 原样（`PascalCase`），Rust 侧用 `#[serde(rename = "...")]`，避免自造命名。
 - 分页：`Offset` + `Limit`，响应里带 `TotalCount`；客户端负责翻页并设上限（防止一次拉爆）。
 
-## 2. 签名
+## 2. 凭证
+
+账户页保存 `cloud.json`（PublicKey、ProjectId、Region、Endpoint、启用状态），PrivateKey 只写系统钥匙串；
+`adash-tool` 与 GUI 共用。环境变量 `UCLOUD_PUBLIC_KEY` / `UCLOUD_PRIVATE_KEY` / `UCLOUD_PROJECT_ID`
+仍可用于临时验证。手动设置 `UDASH_MOCK=1` 强制 Mock，`UDASH_MOCK=0` 强制 Live。
+
+## 3. 签名
 
 `signature.rs` 负责，纯函数 + 测试向量：
 
@@ -23,7 +29,7 @@ Signature    = base64( sha1( stringToSign + PrivateKey ) )
 
 对外只暴露 `sign(params, private_key) -> String`，`PrivateKey` 用包装类型，`Debug` 打印 `<redacted>`。
 
-## 3. 首批接口清单
+## 4. 首批接口清单
 
 | 用途 | Action | 备注 |
 | --- | --- | --- |

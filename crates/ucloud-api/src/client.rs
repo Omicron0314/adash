@@ -3,12 +3,13 @@
 //! Nothing above this layer knows whether it is talking to UCloud or to
 //! `fixtures/mock`; [`UcloudClient::mode`] exists only for the UI badge.
 
+use crate::credentials::Credentials;
 use crate::error::{Error, Result};
 use crate::models::{
     Balance, BillList, EipList, RegionList, UDiskList, UHostList, UMemList, UdbList, UlbList,
 };
 use crate::paths::Action;
-use crate::transport::{Backend, mock_enabled};
+use crate::transport::Backend;
 
 /// A configured UCloud account.
 #[derive(Debug)]
@@ -28,6 +29,19 @@ pub enum Mode {
 }
 
 impl UcloudClient {
+    /// Live client from a saved profile or explicit credentials.
+    pub fn live_with(
+        credentials: Credentials,
+        endpoint: Option<String>,
+        region: Option<String>,
+    ) -> Result<Self> {
+        let backend = Backend::live(credentials, endpoint)?;
+        Ok(Self {
+            backend,
+            region: region.filter(|value| !value.is_empty()),
+        })
+    }
+
     /// Live client from `UCLOUD_*` environment variables.
     pub fn live() -> Result<Self> {
         let backend = Backend::live_from_env()?;
@@ -45,12 +59,39 @@ impl UcloudClient {
         }
     }
 
-    /// Mock when `UDASH_MOCK=1`, live otherwise.
+    /// Explicit Mock (saved account disabled), otherwise Live from the saved
+    /// account; `UDASH_MOCK` still overrides both.
     pub fn from_env() -> Result<Self> {
-        if mock_enabled() {
-            Ok(Self::mock())
-        } else {
-            Self::live()
+        match std::env::var("UDASH_MOCK") {
+            Ok(value)
+                if !matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "" | "0" | "false"
+                ) =>
+            {
+                Ok(Self::mock())
+            }
+            Ok(_) => {
+                // Explicit live: prefer env credentials, then the saved account.
+                if std::env::var_os("UCLOUD_PUBLIC_KEY").is_some() {
+                    Self::live()
+                } else if let Some(profile) = crate::CloudProfile::load()? {
+                    profile.client()
+                } else {
+                    Self::live()
+                }
+            }
+            Err(_) => {
+                if let Some(profile) = crate::CloudProfile::load()?
+                    && profile.enabled
+                {
+                    return profile.client();
+                }
+                if std::env::var_os("UCLOUD_PUBLIC_KEY").is_some() {
+                    return Self::live();
+                }
+                Ok(Self::mock())
+            }
         }
     }
 

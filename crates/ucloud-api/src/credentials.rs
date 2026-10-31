@@ -41,15 +41,34 @@ impl Credentials {
             .ok_or_else(|| Error::Credentials("UCLOUD_PUBLIC_KEY is not set".into()))?;
         let private = non_empty("UCLOUD_PRIVATE_KEY")
             .ok_or_else(|| Error::Credentials("UCLOUD_PRIVATE_KEY is not set".into()))?;
-        let private_key = SecretKey::new(private);
+        Self::new(
+            public_key,
+            private,
+            non_empty("UCLOUD_PROJECT_ID"),
+            non_empty("UCLOUD_REGION"),
+        )
+    }
+
+    /// Build credentials from a saved profile or an explicit test.
+    pub fn new(
+        public_key: impl Into<String>,
+        private: impl Into<String>,
+        project_id: Option<String>,
+        region: Option<String>,
+    ) -> Result<Self> {
+        let public_key = public_key.into().trim().to_owned();
+        if public_key.is_empty() || public_key.chars().any(char::is_control) {
+            return Err(Error::Credentials("UCLOUD_PUBLIC_KEY is invalid".into()));
+        }
+        let private_key = SecretKey::new(private.into().trim().to_owned());
         if private_key.is_empty() {
             return Err(Error::Credentials("UCLOUD_PRIVATE_KEY is empty".into()));
         }
         Ok(Self {
             public_key,
             private_key,
-            project_id: non_empty("UCLOUD_PROJECT_ID"),
-            region: non_empty("UCLOUD_REGION"),
+            project_id: project_id.filter(|value| !value.trim().is_empty()),
+            region: region.filter(|value| !value.trim().is_empty()),
         })
     }
 

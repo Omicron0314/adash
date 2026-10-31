@@ -27,6 +27,8 @@ pub mod nav {
     pub const SNIPPETS: &str = "片段";
     /// Port forwarding (M6).
     pub const PORT_FORWARD: &str = "端口转发";
+    /// UCloud account and AI service configuration.
+    pub const ACCOUNT: &str = "账户";
 }
 
 /// Overview card titles.
