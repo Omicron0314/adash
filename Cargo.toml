@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/adash-paths",
+    "crates/adash-repo",
     "crates/ucloud-api",
     "crates/adash-core",
     "crates/adash-tool",
@@ -19,6 +20,7 @@ publish = false
 
 [workspace.dependencies]
 adash-paths = { path = "crates/adash-paths" }
+adash-repo = { path = "crates/adash-repo" }
 ucloud-api = { path = "crates/ucloud-api" }
 adash-core = { path = "crates/adash-core" }
 adash-ssh = { path = "crates/adash-ssh" }

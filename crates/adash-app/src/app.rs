@@ -321,6 +321,7 @@ impl Adash {
             pump: None,
         };
 
+        #[cfg(not(feature = "ui-test-hooks"))]
         if let Some(reason) = app.agent.offline_reason()
             && let Some(welcome) = app.messages.first_mut()
         {
@@ -722,8 +723,11 @@ impl Adash {
             cx.notify();
             return;
         }
-        if pending.is_none() && self.mode != Mode::Mock {
-            self.notice = Some("真实账户的写操作暂未接入。计划已保留，没有修改云资源。".to_owned());
+        if self.mode != Mode::Mock {
+            self.notice = Some(
+                "真实账户的写操作暂未接入。计划已保留，没有修改云资源；可在账户页切回 Mock 演示执行。"
+                    .to_owned(),
+            );
             cx.notify();
             return;
         }

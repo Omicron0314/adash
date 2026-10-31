@@ -16,7 +16,7 @@ const target = JSON.parse(execFileSync('cargo',['metadata','--format-version=1',
 const tool = resolve(process.env.ADASH_TOOL ?? join(target,'debug',process.platform==='win32'?'adash-tool.exe':'adash-tool'));
 const runtime = process.env.ADASH_TEST_RUNTIME ?? fileURLToPath(new URL('../dist/index.js', import.meta.url));
 const resourceRoot = process.env.ADASH_TEST_RESOURCES ?? root;
-const tools = ['ucloud_inventory','ucloud_describe_resource','ucloud_projects','ucloud_billing','ucloud_flows','ucloud_flow','ucloud_plan_deploy','ucloud_plan_optimize','ucloud_plan_stop','ucloud_apply_plan'].sort();
+const tools = ['ucloud_inventory','ucloud_describe_resource','ucloud_projects','ucloud_billing','ucloud_flows','ucloud_flow','ucloud_repo_inspect','ucloud_plan_repo_deploy','ucloud_plan_deploy','ucloud_plan_optimize','ucloud_plan_stop','ucloud_apply_plan'].sort();
 class Host {
   lines=[]; log=''; events=new EventEmitter();
   constructor(env,provider) {
@@ -86,7 +86,7 @@ test('SDK startup, tool boundary, confirmation, streaming, abort and model error
   const host=new Host(env,provider);
   t.after(async()=>{await host.dispose();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));rmSync(directory,{recursive:true,force:true});});
   const store=()=>JSON.parse(readFileSync(join(state,'state.json'),'utf8'));
-  await t.test('prompt waits for startup; only the ten cloud tools are active',async()=>{
+  await t.test('prompt waits for startup; only the explicit cloud tools are active',async()=>{
     host.send({type:'start',session_dir:join(state,'sessions')});host.send({type:'prompt',message:'inventory'});
     const ready=await host.wait('ready');assert.equal(ready.provider,'adash-configured');assert.equal(ready.model,'nested/model');assert.deepEqual(ready.tools.sort(),tools);
     await host.wait('agent_settled');

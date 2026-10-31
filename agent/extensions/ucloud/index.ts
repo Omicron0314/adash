@@ -167,6 +167,33 @@ export default function (pi: ExtensionAPI) {
   );
 
   pi.registerTool(
+    readTool(
+      "ucloud_repo_inspect",
+      "repo-inspect",
+      "只读分析一个本机 Git 目录或公开 GitHub URL：读取依赖清单、Dockerfile 和 compose 描述，返回语言、框架、可能需要的 UCloud 服务及证据。不会读取 .env、密钥或源码正文。部署分析必须先用它。",
+      Type.Object({
+        source: Type.String({ description: "https://github.com/owner/repo 或本机仓库目录" }),
+      }),
+    ),
+  );
+  pi.registerTool(
+    planTool(
+      "ucloud_plan_repo_deploy",
+      "plan-repo-deploy",
+      "为仓库生成最省钱的 UCloud 部署计划。先调用 ucloud_repo_inspect；services 可选，格式 [{kind:'lighthost'|'uhost'|'eip'|'udb'|'redis'|'ulb'|'bucket'|'disk',spec:'2C / 4GiB',count:1}]。不传 services 时按扫描结果选择单台轻量主机 + 必要服务。只生成计划，不执行。",
+      Type.Object({
+        project: Type.Optional(Type.String({ description: "项目 slug（小写字母、数字、短横线）；省略时从仓库名生成" })),
+        source: Type.String({ description: "https://github.com/owner/repo 或本机仓库目录" }),
+        region: Type.Optional(Type.String({ description: "地域，例如 cn-bj2；默认 cn-bj2" })),
+        services: Type.Optional(Type.Array(Type.Object({
+          kind: Type.String({ description: "资源类型：lighthost/uhost/eip/udb/redis/ulb/bucket/disk" }),
+          spec: Type.Optional(Type.String({ description: "规格，例如 2C / 4GiB、5Mbps、100GiB" })),
+          count: Type.Optional(Type.Number({ description: "数量，默认 1" })),
+        }))),
+      }),
+    ),
+  );
+  pi.registerTool(
     planTool(
       "ucloud_plan_deploy",
       "plan-deploy",

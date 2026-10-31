@@ -93,6 +93,9 @@ pub mod home {
     pub const FLOW: &str = "查看项目流程 →";
     pub const INVENTORY_QUESTION: &str = "有哪些云资源？";
     pub const SAVINGS_QUESTION: &str = "有浪费的钱吗？";
+    pub const DEPLOY_REPO: &str = "部署仓库";
+    pub const DEPLOY_HINT: &str =
+        "直接发送 GitHub 地址或本机仓库路径，我会读取清单、推断服务并生成最省钱的上云计划。";
 }
 
 /// Flow inspector and connection legend.

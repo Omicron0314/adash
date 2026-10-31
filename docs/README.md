@@ -33,6 +33,8 @@ docs/
   screenshots/               主页/资源/主机/设置/流程截图
 crates/
   ucloud-api/                唯一 UCloud 客户端（签名/传输/模型/Mock）
+  adash-paths/               运行时资源/工具/数据目录发现
+  adash-repo/                只读仓库清单扫描与服务线索
   adash-core/                领域层（资源/项目/流程/预算/计划/状态）
   adash-tool/                代理唯一执行面（JSON CLI）
   agent-sdk/                 内置 pi SDK 宿主的 JSONL 边界

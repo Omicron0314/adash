@@ -192,3 +192,37 @@ fn deploy_plan_carries_its_project_and_cost() {
     assert_eq!(plan["monthly_delta_cents"], 18_640 + 2_400);
     assert_eq!(data["monthly_delta"], "+¥210.40");
 }
+
+#[test]
+fn repo_plan_reads_manifests_and_never_returns_env_secrets() {
+    let sandbox = Sandbox::new("repo-plan");
+    let repo = sandbox.home.join("repo");
+    std::fs::create_dir_all(&repo).expect("repo dir");
+    std::fs::write(
+        repo.join("package.json"),
+        r#"{"dependencies":{"next":"15","pg":"8","ioredis":"5"}}"#,
+    )
+    .expect("manifest");
+    std::fs::write(
+        repo.join(".env"),
+        "DATABASE_URL=postgres://user:secret@example/db",
+    )
+    .expect("secret file");
+    let input = serde_json::json!({
+        "project": "repo-demo",
+        "source": repo.to_str().expect("path"),
+        "region": "cn-bj2"
+    })
+    .to_string();
+    let planned = sandbox.run(&["plan-repo-deploy"], Some(&input));
+    let data = ok(&planned);
+    let actions = data["plan"]["actions"].as_array().expect("actions");
+    assert!(actions.iter().any(|action| action["kind"] == "lighthost"));
+    assert!(actions.iter().any(|action| action["kind"] == "eip"));
+    assert!(actions.iter().any(|action| action["kind"] == "udb"));
+    assert!(actions.iter().any(|action| action["kind"] == "redis"));
+    assert_eq!(data["repo"]["languages"][0], "Node.js");
+    assert!(!planned.to_string().contains("secret"));
+    let state = std::fs::read_to_string(sandbox.state_path()).expect("state");
+    assert!(!state.contains("secret"));
+}

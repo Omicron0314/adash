@@ -49,7 +49,7 @@
 ## M3 pi 代理（`agent/runtime` + `agent-sdk`）
 
 - [x] SDK 宿主：`createAgentSession`、启动等待、流式事件、错误、取消与会话清理；不调用 pi CLI。
-- [x] `agent/extensions/ucloud`：10 个 `ucloud_*` 工具（6 read、3 plan、1 apply），全部走 `adash-tool`。
+- [x] `agent/extensions/ucloud`：12 个 `ucloud_*` 工具（7 read、4 plan、1 apply），全部走 `adash-tool`。
 - [x] `agent/prompts/system.md` + `agent/skills/{deploy-cheapest,cost-optimize,ucloud-regions,flow-map}`。
 - [x] 计划确认：GUI 一次性批准 → `ucloud_apply_plan`；仅收到 UI 应答而没有令牌仍被拒绝。
 - [x] 会话写入应用数据目录；标准扩展、上下文文件、提示模板和工具发现关闭。
@@ -103,6 +103,7 @@ catussh 的终端 / 文件 / 监控 / 身份 / 片段 / 端口转发全部保留
 - [x] 原生终端：同行多色与空格/中文网格、ANSI/256 色/truecolor、光标/粗体、按窗口同步 PTY 尺寸、
       滚轮历史、常用控制/功能/导航键、复制当前屏幕、bracketed paste 与中文 IME。
       GPUI 测试验证预编辑不发往远端，提交一次，失焦或弹窗时不发送。
+- [ ] 真实 UCloud 创建 API 执行器（当前 Live 计划只读，Mock 记录执行）
 - [x] 文件 UI：路径跳转/上一级、虚拟化目录列表、新建/重命名/删除、文本编辑、修改丢弃确认、
       上传/下载进度与取消；上传/下载拒绝覆盖已有目标，保存替换失败保留并恢复原文件。
 - [x] 主机编辑与身份重选、保存失败回滚、稳定的异步会话索引、重连、关闭时的数据保护；
@@ -112,7 +113,10 @@ catussh 的终端 / 文件 / 监控 / 身份 / 片段 / 端口转发全部保留
 - [x] 最终验收：`cargo fmt --all --check`、Clippy（workspace/all-targets/-D warnings）、
       `cargo test --workspace`、`ADASH_SSH_INTEGRATION=1 cargo test -p adash-ssh --test localhost`、SDK 测试（14 项）、
       原生窗口截图（主页、资源、流程、主机、身份、片段、转发、设置、真实 SSH 终端/文件/监控/指纹/模态框）。
-- [x] SDK 内置代理（`agent/runtime` + `agent-sdk`），GUI 不再连接外部 pi CLI；10 个云工具白名单。
+- [x] SDK 内置代理（`agent/runtime` + `agent-sdk`），GUI 不再连接外部 pi CLI；12 个云工具白名单。
+- [x] 主页仓库部署入口：`ucloud_repo_inspect` 只读清单推断服务，`ucloud_plan_repo_deploy` 生成最省钱计划；
+      `crates/adash-repo` 支持本机目录/公开 GitHub，源码与 `.env` 不进入模型；证据：`cargo test -p adash-repo`、
+      `cargo test -p adash-tool --test flow repo_plan`。
 - [x] catussh 设置移植（通用/终端/连接），浅色/深色主题、终端字体与字号、超时、监控间隔、指纹清除。
 - [x] 独立账户页集中 UCloud 云账户与 AI 服务；UCloud 保存前只读校验、Live/Mock 切换、钥匙串密钥。
       证据：`docs/screenshots/account.png`；云账户配置序列化不含私钥，SDK/工具使用同一 profile。

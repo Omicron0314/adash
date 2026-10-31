@@ -46,6 +46,12 @@
 规则：新增接口 → 先补 `fixtures/mock` 的真实结构样例并加入内置表 → 加 `paths` 常量与模型 → 加 client 方法 →
 写测试（签名向量 + 解析 + 脱敏）。
 
+### adash-repo
+
+只读仓库扫描器：本机目录或公开 GitHub tarball；递归深度、文件数、单文件/总量都有限制，
+只识别清单文件名并跳过依赖目录、`.git`、符号链接和 `.env`。输出语言、框架、服务线索与证据，
+不输出源码正文。GUI 的主页提示与 `adash-tool repo-inspect` 共用这套规则。
+
 ### adash-core
 
 领域层，GUI 与代理共享。这里**不**发 HTTP。
@@ -81,7 +87,7 @@
 
 `agent/runtime` 是应用自带的 Node 宿主，用 pi SDK 的 `createAgentSession` 创建会话：
 `DefaultResourceLoader` 关闭标准发现（`noExtensions`/`noSkills`/`noContextFiles`/`noPromptTemplates`），只加入本仓库的
-`ucloud_*` 扩展、skills 与追加系统提示；工具白名单固定为 10 个 `ucloud_*`，没有 shell/edit/write。
+`ucloud_*` 扩展、skills 与追加系统提示；工具白名单固定为 12 个 `ucloud_*`，没有 shell/edit/write。
 宿主接收 `start` / `prompt` / `abort` / `set_model` / `ui_response` / `dispose`，输出 GUI 所需的 SDK 事件投影。
 文本更新仅传本次 delta，避免反复传送完整消息与 provider 元数据；模型错误显式进入错误事件。
 模型服务由用户在「账户」页填写：Endpoint、API 协议、模型 ID 与 token 限制存入应用 `ai.json`，
@@ -107,6 +113,16 @@ PrivateKey 只存系统钥匙串。GUI 与 `adash-tool` 共用该 profile，因�
 `adash-tool` 从应用同目录或 PATH 查找，显式环境覆盖可用于自定义安装。
 构建脚本将程序、工具、SDK/扩展及 Node 依赖复制到可移动目录；启动脚本按自身位置执行程序。
 Mock JSON 编译进客户端，独立运行无需开发目录。截图启动钩子仅在 `ui-test-hooks` 功能下编译。
+
+### 仓库扫描与部署计划
+
+`adash-repo` 只读取受支持的清单文件名（package.json、Cargo.toml、requirements.txt、go.mod、Dockerfile、compose 等），
+限制文件数量/大小/递归深度并跳过 `.git`、依赖目录、符号链接和 `.env`。本机路径只读；公开 GitHub URL
+下载 tarball 后同样只解析清单。返回语言、框架、服务线索和证据，不返回文件正文。
+
+`ucloud_repo_inspect` 将摘要交给模型；`ucloud_plan_repo_deploy` 用同一扫描结果生成计划，
+默认选单台轻量主机 + 公网 IP + 清单要求的 UDB/Redis/US3，只有模型明确选择时才加 ULB。
+计划仍走同一套批准/哈希/过期校验。当前执行器仅在 Mock 模式记录流程，真实创建 API 尚未接入。
 
 ### adash-ssh
 

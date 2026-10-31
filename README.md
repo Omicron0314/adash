@@ -61,6 +61,20 @@ Mock 数据内置于二进制，运行时无需原始 checkout 或 fixtures 目�
 Mock 账户里有一台「shop-api」项目（2 台主机 + MySQL + Redis + ULB + EIP + 云盘）、
 一个孤儿 EIP 和一块未挂载云盘，`adash-tool reset` 可恢复基线并写入一条可回放的部署记录。
 
+## 从仓库生成上云计划
+
+主页直接发送 GitHub 仓库地址或本机 Git 目录即可。代理会先调用 `ucloud_repo_inspect`
+读取依赖清单、Dockerfile 与 compose 描述（不读取源码正文、`.env` 或密钥），推断应用所需服务，
+再调用 `ucloud_plan_repo_deploy` 生成最小服务组合和月成本计划。仓库 URL/路径示例：
+
+```text
+请分析 https://github.com/owner/repo，为项目 shop-api 生成最省钱的上云计划
+请分析 /home/me/code/shop-api，生成部署计划
+```
+
+计划会出现在主页的计划卡片中，需要用户确认；不会自动创建资源。当前执行器只记录 Mock 部署轨迹，
+真实 UCloud 创建接口尚未接入；Live 账户可以生成和核对计划，但确认执行会被明确拒绝。
+
 真实账户也可以在环境变量中提供 `UCLOUD_PUBLIC_KEY` / `UCLOUD_PRIVATE_KEY` / `UCLOUD_PROJECT_ID`
 并设置 `UDASH_MOCK=0`，适合临时验证。Live 写操作尚未实现；Mock 计划执行目前记录流程历史，
 不会实际创建或删除库存资源。

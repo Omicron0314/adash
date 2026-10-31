@@ -143,7 +143,7 @@ async function start(command: StartCommand) {
     model,
     sessionManager: SessionManager.create(root, command.session_dir ?? join(dirname(directory), "sessions")),
     // No shell or edit tools. The extension is the only action surface.
-    tools: ["ucloud_inventory", "ucloud_describe_resource", "ucloud_projects", "ucloud_billing", "ucloud_flows", "ucloud_flow", "ucloud_plan_deploy", "ucloud_plan_optimize", "ucloud_plan_stop", "ucloud_apply_plan"],
+    tools: ["ucloud_inventory", "ucloud_describe_resource", "ucloud_projects", "ucloud_billing", "ucloud_flows", "ucloud_flow", "ucloud_repo_inspect", "ucloud_plan_repo_deploy", "ucloud_plan_deploy", "ucloud_plan_optimize", "ucloud_plan_stop", "ucloud_apply_plan"],
   });
   session = created.session;
   unsubscribe?.();

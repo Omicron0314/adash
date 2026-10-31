@@ -31,7 +31,9 @@ fn main() -> ExitCode {
         "billing" => read_billing(),
         "flows" => read_flows(),
         "flow" => read_flow(require(rest, 0, "flow <project>")),
+        "repo-inspect" => repo_inspect(),
         "plan-deploy" => plan_deploy(),
+        "plan-repo-deploy" => plan_repo_deploy(),
         "plan-optimize" => plan_optimize(),
         "plan-stop" => plan_stop(),
         "approve" => approve(rest),
@@ -78,7 +80,15 @@ const COMMANDS: &[(&str, &str)] = &[
         "flow <project>",
         "read: a project's full graph and executions",
     ),
+    (
+        "repo-inspect",
+        "read: summarize a local or public GitHub repository",
+    ),
     ("plan-deploy", "plan: stage a deployment (JSON on stdin)"),
+    (
+        "plan-repo-deploy",
+        "plan: analyze a repository and stage the cheapest service mix",
+    ),
     (
         "plan-optimize",
         "plan: stage release of every idle resource",
@@ -306,6 +316,146 @@ fn plan_deploy() -> Result<Value, Error> {
         "plan": plan,
         "monthly_delta": plan.monthly_delta_text(),
     }))
+}
+
+fn repo_inspect() -> Result<Value, Error> {
+    let input = read_stdin_json()?;
+    let source = input
+        .get("source")
+        .and_then(Value::as_str)
+        .ok_or_else(|| Error::new("input", "缺少 source（GitHub URL 或本机仓库路径）"))?;
+    let profile = adash_repo::inspect_source(source)
+        .map_err(|error| Error::new("repo", error.to_string()))?;
+    Ok(json!({ "repo": profile }))
+}
+
+fn plan_repo_deploy() -> Result<Value, Error> {
+    let input = read_stdin_json()?;
+    let source = input
+        .get("source")
+        .and_then(Value::as_str)
+        .ok_or_else(|| Error::new("input", "缺少 source（GitHub URL 或本机仓库路径）"))?;
+    let region = input
+        .get("region")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("cn-bj2");
+    let profile = adash_repo::inspect_source(source)
+        .map_err(|error| Error::new("repo", error.to_string()))?;
+    let project = input
+        .get("project")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| default_project_slug(&profile.name));
+
+    let mut requested = Vec::<(ResourceKind, String, i64)>::new();
+    if let Some(services) = input.get("services").and_then(Value::as_array) {
+        for service in services {
+            let kind = service
+                .get("kind")
+                .and_then(Value::as_str)
+                .and_then(|name| {
+                    ResourceKind::ALL
+                        .into_iter()
+                        .find(|kind| kind.as_str() == name)
+                })
+                .ok_or_else(|| Error::new("input", "services.kind 不是受支持的资源类型"))?;
+            let spec = service
+                .get("spec")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim()
+                .to_owned();
+            let count = service
+                .get("count")
+                .and_then(Value::as_i64)
+                .unwrap_or(1)
+                .clamp(1, 10);
+            requested.push((kind, spec, count));
+        }
+    }
+    if requested.is_empty() {
+        // Cheapest viable default: one lightweight host, one public IP, then
+        // only services supported by the repository's manifests.
+        requested.push((ResourceKind::LightHost, "2C / 4GiB".into(), 1));
+        let ids = profile.service_ids();
+        if ids.contains(&"eip") {
+            requested.push((ResourceKind::Eip, "5Mbps".into(), 1));
+        }
+        if ids.contains(&"udb") {
+            requested.push((ResourceKind::Udb, "MySQL 2C / 4GiB".into(), 1));
+        }
+        if ids.contains(&"redis") {
+            requested.push((ResourceKind::Redis, "Redis 1C / 1GiB".into(), 1));
+        }
+        if ids.contains(&"bucket") {
+            requested.push((ResourceKind::Bucket, "US3 10GiB".into(), 1));
+        }
+    }
+    let mut actions = Vec::new();
+    for (kind, spec, count) in requested {
+        actions.extend(create_action(kind, &spec, region, count));
+    }
+    let mut plan = Plan::new(
+        PlanKind::Deploy,
+        format!(
+            "从 {} 部署 {}：{} 项服务，优先单机与最小规格",
+            profile.name,
+            project,
+            plan_service_count(&actions)
+        ),
+        actions,
+    )
+    .with_project(project.clone());
+    plan.risks.extend(profile.warnings.clone());
+    plan.risks
+        .push("仓库清单只用于推断服务，部署前请核对运行时、数据库和持久化需求".into());
+    plan.risks
+        .push("当前执行器只记录 Mock 部署轨迹，不会调用真实创建 API".into());
+
+    let mut store = Store::open_default();
+    let mut record = store.project(&project).cloned().unwrap_or(ProjectRecord {
+        slug: project.clone(),
+        name: project.clone(),
+        ..ProjectRecord::default()
+    });
+    record.repo = Some(profile.source.clone());
+    store.set_project(record);
+    let id = store.insert_plan(plan.clone());
+    store.save().map_err(|error| Error::new("state", error))?;
+    Ok(json!({
+        "plan_id": id,
+        "plan": plan,
+        "monthly_delta": plan.monthly_delta_text(),
+        "repo": profile,
+    }))
+}
+
+fn default_project_slug(name: &str) -> String {
+    let slug: String = name
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let slug = slug.trim_matches('-').to_owned();
+    if slug.is_empty() {
+        "repo-app".to_owned()
+    } else {
+        slug
+    }
+}
+
+fn plan_service_count(actions: &[PlanAction]) -> usize {
+    actions
+        .iter()
+        .filter(|action| action.verb == Verb::Create)
+        .count()
 }
 
 fn plan_optimize() -> Result<Value, Error> {

@@ -233,6 +233,31 @@ impl Adash {
                         }),
                     )),
             )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(rem(8.))
+                    .rounded(rem(14.))
+                    .bg(color(ColorRole::SURFACE_CONTAINER))
+                    .px(rem(12.))
+                    .py(rem(9.))
+                    .child(
+                        div()
+                            .text_size(TEXT_AUX)
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(color(ColorRole::PRIMARY))
+                            .child(i18n::home::DEPLOY_REPO),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .text_size(TEXT_AUX)
+                            .text_color(color(ColorRole::ON_SURFACE_VARIANT))
+                            .child(i18n::home::DEPLOY_HINT),
+                    ),
+            )
             .child(messages)
             .child(self.render_composer(window, cx));
 
@@ -280,7 +305,11 @@ impl Adash {
             .into_any_element()
     }
 
-    fn render_plan_card(&self, plan: &adash_core::Plan, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn render_plan_card(
+        &self,
+        plan: &adash_core::Plan,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let destructive = !plan.reversible;
         let plan_id_cancel = plan.id.clone();
         let plan_id_confirm = plan.id.clone();

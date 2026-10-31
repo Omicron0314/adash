@@ -39,6 +39,7 @@ Rust workspace，GPUI 桌面应用，Material 3 Expressive 组件来自
 | `crates/adash-core` | Rust | 领域层：统一资源模型、项目、流程（Flow）、预算/花费、计划(Plan)、执行器、本地状态 |
 | `crates/adash-tool` | Rust（bin） | 给 pi 扩展调用的 JSON CLI，代理**唯一的**执行面 |
 | `crates/adash-paths` | Rust | 按运行位置发现资源/工具，统一系统用户数据目录 |
+| `crates/adash-repo` | Rust | 只读仓库清单/框架/服务线索扫描（本机或公开 GitHub） |
 | `crates/agent-sdk` | Rust | 内置 pi SDK 宿主的 JSONL 边界（启动、命令、事件、确认） |
 | `agent/runtime` | TypeScript | 嵌入 `createAgentSession` 的 SDK 宿主；模型、会话、工具、确认 |
 | `crates/adash-ssh` | Rust | SSH/SFTP/PTY/监控/转发传输层，独立于 GUI |
@@ -58,10 +59,11 @@ Rust workspace，GPUI 桌面应用，Material 3 Expressive 组件来自
 - **代理复用 pi SDK。** 应用自带 Node SDK host（`agent/runtime`），调用 `createAgentSession` 管理会话、模型、工具与确认；
   Rust 通过 `agent-sdk` 的 JSONL 边界与它通信，不启动、也不连接外部 `pi` CLI 或已有 pi 会话。
 - **SDK 使用显式工具白名单**：`noExtensions`/`noSkills`/`noContextFiles`/`noPromptTemplates` 关掉标准发现，只加载本仓库的
-  `ucloud_*` 工具与 skill；没有 bash/edit/write。会话存在应用数据目录，凭证不进入模型上下文。
+  `ucloud_*` 工具与 skill；没有 bash/edit/write。仓库分析只能读清单、Dockerfile 与 compose，
+  不读取源码正文、`.env` 或密钥。会话存在应用数据目录，凭证不进入模型上下文。
 - AI 服务必须来自账户页中的用户输入；UCloud 凭证来自账户页或显式环境变量；禁止自动继承个人 pi 凭据/默认模型。密钥写系统钥匙串，
   不写 JSON、argv、环境变量或模型上下文；用户更改 Endpoint 时不能自动复用旧密钥。
-- **三个页面共享 `adash-core` 的类型**，不允许各页面自己解析 UCloud JSON。
+- **三个产品页面共享 `adash-core` 的类型**，不允许各页面自己解析 UCloud JSON。
 
 ## 3. 安全与花钱规则（硬性）
 

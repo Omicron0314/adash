@@ -8,6 +8,7 @@ publish.workspace = true
 
 [dependencies]
 adash-paths.workspace = true
+adash-repo.workspace = true
 ucloud-api.workspace = true
 adash-core.workspace = true
 serde.workspace = true
