@@ -966,7 +966,7 @@ impl Render for Adash {
             .size_full()
             .bg(color(ColorRole::SURFACE))
             .text_color(color(ColorRole::ON_SURFACE))
-            .child(self.render_titlebar(cx))
+            .child(self.render_titlebar(window, cx))
             .child(
                 div()
                     .flex()
@@ -1148,17 +1148,20 @@ impl Adash {
         cx.notify();
     }
 
-    fn render_titlebar(&self, cx: &mut Context<Self>) -> AnyElement {
-        let labels = CaptionLabels {
-            minimize: "最小化".into(),
-            maximize: "最大化".into(),
-            restore: "还原".into(),
-            close: "关闭".into(),
-        };
-        let mut bar = TitleBar::new("adash-titlebar", px(32.), labels)
+    fn render_titlebar(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        // Kit lays supported min/max/close controls out inside the visible
+        // frame. Material's viewport-anchored captions sit in the Linux shadow.
+        let mut bar = gpui_kit::component::TitleBar::new()
+            .w_full()
+            .min_w_0()
+            .h(px(32.))
+            .pl(px(title_bar_leading(px(32.), window)))
+            .border_0()
+            .bg(color(ColorRole::SURFACE))
             .child(
                 div()
                     .flex()
+                    .flex_shrink_0()
                     .items_center()
                     .gap(rem(10.))
                     .child(
@@ -1190,10 +1193,11 @@ impl Adash {
         bar = bar.child(
             div()
                 .flex()
+                .flex_shrink_0()
                 .items_center()
                 .gap(rem(6.))
                 .pr(px(8.))
-                .child(
+                .children((window.viewport_size().width >= px(640.)).then(|| {
                     div()
                         .text_size(TEXT_AUX)
                         .text_color(color(ColorRole::ON_SURFACE_VARIANT))
@@ -1204,16 +1208,18 @@ impl Adash {
                             } else {
                                 format!("{} 秒前", (now_secs() - self.last_refresh).max(0))
                             }
-                        )),
-                )
-                .child(crate::widgets::text_button(
-                    "refresh-all",
-                    i18n::action::REFRESH,
-                    cx.listener(|this, _, _, cx| {
-                        this.refresh();
-                        this.notice = Some("数据已刷新".to_owned());
-                        cx.notify();
-                    }),
+                        ))
+                }))
+                .child(title_bar_control(
+                    MaterialButton::new("refresh-all")
+                        .variant(ButtonVariant::Text)
+                        .button_size(ButtonSize::ExtraSmall)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.refresh();
+                            this.notice = Some("数据已刷新".to_owned());
+                            cx.notify();
+                        }))
+                        .child(i18n::action::REFRESH),
                 )),
         );
         bar.into_any_element()

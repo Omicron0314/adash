@@ -7,6 +7,8 @@
 | 页面 | 截图 | 窗口 |
 | --- | --- | --- |
 | 对话与账户概览 | [overview.png](overview.png) | 1440×900 |
+| 小窗口标题栏 | [titlebar-800.png](titlebar-800.png) · [titlebar-320.png](titlebar-320.png) | 800×600 / 320×32（仅标题栏） |
+| 最大化后的标题栏与窗口 | [titlebar-maximized.png](titlebar-maximized.png) | 实际最大化窗口，未缩放 |
 | 深色主题 | [overview-dark.png](overview-dark.png) | 1440×900 |
 | Markdown 助手回复 | [chat-markdown.png](chat-markdown.png) | 1440×900 |
 | Markdown 深色主题 / 宽表格 | [chat-markdown-dark-1280.png](chat-markdown-dark-1280.png) · [chat-markdown-wide-1280.png](chat-markdown-wide-1280.png) | 1280×800 |
@@ -58,6 +60,10 @@ ADASH_MODEL=missing-provider/nested/model python3 scripts/capture-ui.py home \
 
 脚本仅调整、关闭自己启动的窗口，并恢复先前焦点；不会覆盖用户的 HOME 或应用状态。
 即使调用者设置了 `ADASH_DATA_DIR`，截图也强制使用自己的临时数据目录。
+
+标题栏回归另使用临时原生测试入口，读取 Kit 记录的按钮边界，确认 320px 窗口内按钮全部位于可见客户区及 32px 标题栏中。
+注入实际 GPUI 鼠标按下/抬起事件，验证最大化、还原、关闭窗口及进程正常退出；最大化截图来自这一流程。
+最小化是否出现由平台能力决定：本机 niri 报告 `minimize=false`，其余系统的实际最小化/恢复操作仍需对应桌面验收。
 
 Markdown 对话截图使用临时预览入口，复用实际 `Adash` 对话视图，把固定示例正文按每 80ms、14 个字符追加。
 验证标题、强调、列表、链接、行内代码、代码块、表格和引用，以及深色表头的可读性与宽表格的内部裁切。
