@@ -129,15 +129,15 @@ mod tests {
     use ucloud_api::UcloudClient;
 
     #[test]
-    fn mock_account_has_two_waste_findings() {
+    fn mock_account_has_four_waste_findings() {
         let inventory = Inventory::load(&UcloudClient::mock());
         let findings = analyze(&inventory);
-        assert_eq!(findings.len(), 2);
+        assert_eq!(findings.len(), 4);
         let total: i64 = findings
             .iter()
             .map(|finding| finding.monthly_savings_cents)
             .sum();
-        assert_eq!(total, 2400 + 8000);
+        assert_eq!(total, 2_400 * 2 + 8_000 + 37_280);
     }
 
     #[test]
@@ -145,8 +145,8 @@ mod tests {
         let inventory = Inventory::load(&UcloudClient::mock());
         let findings = analyze(&inventory);
         let plan = plan(&findings);
-        assert_eq!(plan.actions.len(), 2);
-        assert_eq!(plan.monthly_delta_cents, -(2400 + 8000));
+        assert_eq!(plan.actions.len(), 4);
+        assert_eq!(plan.monthly_delta_cents, -(2_400 * 2 + 8_000 + 37_280));
         assert!(!plan.reversible);
         assert_eq!(plan.kind, PlanKind::Optimize);
     }

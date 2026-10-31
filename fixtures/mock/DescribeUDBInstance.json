@@ -2,7 +2,7 @@
   "Action": "DescribeUDBInstance",
   "RetCode": 0,
   "Message": "",
-  "TotalCount": 1,
+  "TotalCount": 2,
   "DataSet": [
     {
       "DBId": "udb-shopdb1",
@@ -11,10 +11,22 @@
       "DBType": "mysql",
       "Region": "cn-bj2",
       "Zone": "cn-bj2-02",
-      "DiskSpace": 50,
+      "DiskSpace": 100,
       "ChargeType": "Month",
       "CreateTime": 1735689600,
       "Tag": "adash:shop-api"
+    },
+    {
+      "DBId": "udb-analytics1",
+      "Name": "batch-analytics-db",
+      "State": "Running",
+      "DBType": "mysql",
+      "Region": "cn-sh2",
+      "Zone": "cn-sh2-01",
+      "DiskSpace": 200,
+      "ChargeType": "Month",
+      "CreateTime": 1736294400,
+      "Tag": "adash:data-pipeline"
     }
   ]
 }

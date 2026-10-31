@@ -15,16 +15,8 @@
           "Protocol": "HTTPS",
           "FrontendPort": 443,
           "BackendSet": [
-            {
-              "ResourceId": "uhost-shopweb1",
-              "ResourceType": "UHost",
-              "Port": 8080
-            },
-            {
-              "ResourceId": "uhost-shopweb2",
-              "ResourceType": "UHost",
-              "Port": 8080
-            }
+            { "ResourceId": "uhost-shopweb1", "ResourceType": "UHost", "Port": 8080 },
+            { "ResourceId": "uhost-shopweb2", "ResourceType": "UHost", "Port": 8080 }
           ]
         }
       ],

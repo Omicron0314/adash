@@ -46,6 +46,7 @@ agent/
   extensions/ucloud/         pi 扩展：ucloud_* 工具
   skills/                    按需加载的领域知识
 fixtures/mock/               Mock 账户数据（demo/测试/截图共用）
+fixtures/demo/               本机仓库扫描演示（Node/PG/Redis/S3）
 third_party/gpui-kit-material  submodule（固定 commit，不改）
 ```
 

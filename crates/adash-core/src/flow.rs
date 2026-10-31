@@ -141,7 +141,11 @@ impl Flow {
         record: Option<&ProjectRecord>,
         runs: Vec<FlowRun>,
     ) -> Self {
-        let resources: Vec<&Resource> = inventory.of_project(Some(slug));
+        let resources: Vec<&Resource> = if slug == "unassigned" {
+            inventory.of_project(None)
+        } else {
+            inventory.of_project(Some(slug))
+        };
         let mut nodes = Vec::new();
         let mut by_id: BTreeMap<String, &Resource> = BTreeMap::new();
         for resource in &resources {
@@ -337,8 +341,8 @@ mod tests {
     #[test]
     fn every_project_resource_is_a_node() {
         let flow = flow();
-        // 2 hosts + udb + redis + ulb + 2 eip + 1 disk + repo
-        assert_eq!(flow.nodes.len(), 9);
+        // 2 hosts + udb + redis + ulb + 2 eip + 2 disks + repo
+        assert_eq!(flow.nodes.len(), 10);
     }
 
     #[test]

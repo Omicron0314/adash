@@ -3,8 +3,8 @@
   "RetCode": 0,
   "Message": "",
   "AccountInfo": {
-    "Amount": 1280.55,
+    "Amount": 3280.55,
     "AmountFree": 0.0,
-    "AmountCoupon": 50.0
+    "AmountCoupon": 120.0
   }
 }

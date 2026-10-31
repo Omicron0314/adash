@@ -58,8 +58,10 @@ python3 scripts/build-desktop.py
 应用仅使用用户在账户页保存的 AI 服务，不从 `~/.pi`、`ADASH_MODEL` 自动选择模型。
 SDK 不可用、未配置 AI 或模型报错时，仍能用本地领域数据回答资源与账单问题。
 Mock 数据内置于二进制，运行时无需原始 checkout 或 fixtures 目录。
-Mock 账户里有一台「shop-api」项目（2 台主机 + MySQL + Redis + ULB + EIP + 云盘）、
-一个孤儿 EIP 和一块未挂载云盘，`adash-tool reset` 可恢复基线并写入一条可回放的部署记录。
+Mock 账户包含 3 个项目、20 个资源和 4 条浪费项：Shop API（双 Web + MySQL + Redis + ULB）、
+Data Pipeline（批处理主机、分析库、队列）和 Portfolio（香港小站）；另有 2 个孤儿 EIP、
+1 块未挂载云盘和 1 台停机仍计费的主机。`adash-tool reset` 恢复基线并写入三个项目的部署回放。
+**演示脚本见 [docs/DEMO.md](docs/DEMO.md)**。
 
 ## 从仓库生成上云计划
 
@@ -76,8 +78,8 @@ Mock 账户里有一台「shop-api」项目（2 台主机 + MySQL + Redis + ULB 
 真实 UCloud 创建接口尚未接入；Live 账户可以生成和核对计划，但确认执行会被明确拒绝。
 
 真实账户也可以在环境变量中提供 `UCLOUD_PUBLIC_KEY` / `UCLOUD_PRIVATE_KEY` / `UCLOUD_PROJECT_ID`
-并设置 `UDASH_MOCK=0`，适合临时验证。Live 写操作尚未实现；Mock 计划执行目前记录流程历史，
-不会实际创建或删除库存资源。
+并设置 `UDASH_MOCK=0`，适合临时验证。Live 写操作尚未实现；Mock 计划会在本地覆盖层
+创建/移除资源并记录流程，不访问真实云。
 
 ## 验证
 

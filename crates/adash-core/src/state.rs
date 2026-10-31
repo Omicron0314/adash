@@ -6,8 +6,9 @@
 
 use crate::flow::FlowRun;
 use crate::plan::Plan;
+use crate::resource::Resource;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 /// Unix seconds.
@@ -83,6 +84,20 @@ impl Default for Settings {
     }
 }
 
+/// Stateful effects of confirmed Mock plans. Fixtures remain the baseline;
+/// this overlay makes deploy/release/stop visible to every page and to the
+/// agent without touching the compiled sample data.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MockOverlay {
+    /// Resources created by confirmed Mock plans.
+    pub created: Vec<Resource>,
+    /// Existing resources modified by stop/start/resize.
+    pub overrides: BTreeMap<String, Resource>,
+    /// Resource keys released by confirmed Mock plans.
+    pub released: BTreeSet<String>,
+}
+
 /// Everything the app remembers between launches.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StoreData {
@@ -97,6 +112,9 @@ pub struct StoreData {
     /// User preferences; files written before settings were added still load.
     #[serde(default)]
     pub settings: Settings,
+    /// Confirmed Mock mutations, replayed on every inventory read.
+    #[serde(default)]
+    pub mock: MockOverlay,
 }
 
 /// A loaded [`StoreData`] plus where it came from.

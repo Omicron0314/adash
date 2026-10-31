@@ -149,7 +149,8 @@ fn mode_label(client: &UcloudClient) -> &'static str {
 
 fn read_inventory() -> Result<Value, Error> {
     let client = client()?;
-    let inventory = Inventory::load(&client);
+    let store = Store::open_default();
+    let inventory = Inventory::load_with_store(&client, &store);
     let resources: Vec<Value> = inventory
         .resources
         .iter()
@@ -180,7 +181,8 @@ fn read_inventory() -> Result<Value, Error> {
 
 fn read_resource(key: &str) -> Result<Value, Error> {
     let client = client()?;
-    let inventory = Inventory::load(&client);
+    let store = Store::open_default();
+    let inventory = Inventory::load_with_store(&client, &store);
     let id = parse_id(key)?;
     let resource = inventory
         .get(&id)
@@ -190,9 +192,9 @@ fn read_resource(key: &str) -> Result<Value, Error> {
 
 fn read_projects() -> Result<Value, Error> {
     let client = client()?;
-    let inventory = Inventory::load(&client);
-    let billing = Billing::load(&client, &inventory);
     let store = Store::open_default();
+    let inventory = Inventory::load_with_store(&client, &store);
+    let billing = Billing::load(&client, &inventory);
     let views = project_views(&inventory, &billing, store.data.projects.values().cloned());
     Ok(json!({
         "projects": views.iter().map(|view| json!({
@@ -210,7 +212,8 @@ fn read_projects() -> Result<Value, Error> {
 
 fn read_billing() -> Result<Value, Error> {
     let client = client()?;
-    let inventory = Inventory::load(&client);
+    let store = Store::open_default();
+    let inventory = Inventory::load_with_store(&client, &store);
     let billing = Billing::load(&client, &inventory);
     Ok(json!({
         "balance": billing.balance_yuan.map(|yuan| format!("¥{yuan:.2}")),
@@ -227,8 +230,8 @@ fn flow_for(store: &Store, inventory: &Inventory, slug: &str) -> Flow {
 
 fn read_flows() -> Result<Value, Error> {
     let client = client()?;
-    let inventory = Inventory::load(&client);
     let store = Store::open_default();
+    let inventory = Inventory::load_with_store(&client, &store);
     let flows: Vec<Value> = inventory
         .flow_projects()
         .iter()
@@ -249,8 +252,8 @@ fn read_flows() -> Result<Value, Error> {
 
 fn read_flow(slug: &str) -> Result<Value, Error> {
     let client = client()?;
-    let inventory = Inventory::load(&client);
     let store = Store::open_default();
+    let inventory = Inventory::load_with_store(&client, &store);
     let flow = flow_for(&store, &inventory, slug);
     if flow.nodes.is_empty() {
         return Err(Error::new("not_found", format!("项目 {slug} 没有资源")));
@@ -460,13 +463,13 @@ fn plan_service_count(actions: &[PlanAction]) -> usize {
 
 fn plan_optimize() -> Result<Value, Error> {
     let client = client()?;
-    let inventory = Inventory::load(&client);
+    let mut store = Store::open_default();
+    let inventory = Inventory::load_with_store(&client, &store);
     let findings = optimizer::analyze(&inventory);
     if findings.is_empty() {
         return Ok(json!({ "findings": [], "plan": null, "message": "没有发现闲置资源" }));
     }
     let plan = optimizer::plan(&findings);
-    let mut store = Store::open_default();
     let id = store.insert_plan(plan.clone());
     store.save().map_err(|error| Error::new("state", error))?;
     Ok(json!({
@@ -485,7 +488,8 @@ fn plan_stop() -> Result<Value, Error> {
         .ok_or_else(|| Error::new("input", "缺少 resource"))?;
     let id = parse_id(key)?;
     let client = client()?;
-    let inventory = Inventory::load(&client);
+    let store = Store::open_default();
+    let inventory = Inventory::load_with_store(&client, &store);
     let resource = inventory
         .get(&id)
         .ok_or_else(|| Error::new("not_found", format!("找不到资源 {key}")))?;
@@ -559,7 +563,7 @@ fn apply(args: &[String]) -> Result<Value, Error> {
     }
 
     let client = client()?;
-    let inventory = Inventory::load(&client);
+    let inventory = Inventory::load_with_store(&client, &store);
     if matches!(client.mode(), ucloud_api::Mode::Live) {
         return Err(Error::new(
             "unsupported",
@@ -577,7 +581,7 @@ fn apply(args: &[String]) -> Result<Value, Error> {
         "applied": plan_id,
         "project": outcome.project,
         "mode": "mock",
-        "note": "Mock 模式：已记录执行，未真实创建资源",
+        "note": "Mock 模式：已更新本地演示资源清单，未创建真实云端资源",
         "run": outcome.run.id,
     }))
 }

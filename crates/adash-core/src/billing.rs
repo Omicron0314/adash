@@ -90,12 +90,14 @@ mod tests {
         let billing = Billing::load(&client, &inventory);
 
         assert!(billing.errors.is_empty(), "{:?}", billing.errors);
-        assert_eq!(billing.month_cents, 98_350);
+        assert_eq!(billing.month_cents, 251_540);
         assert_eq!(
             billing.project_cents("shop-api"),
-            18_640 * 2 + 9_800 + 7_650 + 2_400 * 2
+            18_640 * 2 + 9_800 + 7_650 + 1_800 + 2_400 * 2 + 4_000 + 8_000
         );
-        // The orphan EIP has no project tag but is still charged.
-        assert_eq!(billing.project_cents("未分组"), 4_800);
+        assert_eq!(billing.project_cents("data-pipeline"), 149_290);
+        assert_eq!(billing.project_cents("portfolio"), 13_720);
+        // Orphan EIPs and disk have no project tag but are still charged.
+        assert_eq!(billing.project_cents("未分组"), 15_200);
     }
 }

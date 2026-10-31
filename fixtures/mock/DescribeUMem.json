@@ -2,7 +2,7 @@
   "Action": "DescribeUMem",
   "RetCode": 0,
   "Message": "",
-  "TotalCount": 1,
+  "TotalCount": 2,
   "DataSet": [
     {
       "InstanceId": "umem-shopcache1",
@@ -10,10 +10,21 @@
       "State": "Running",
       "Region": "cn-bj2",
       "Zone": "cn-bj2-02",
-      "Size": 2048,
+      "Size": 4096,
       "ChargeType": "Month",
       "CreateTime": 1735689600,
       "Tag": "adash:shop-api"
+    },
+    {
+      "InstanceId": "umem-batchqueue1",
+      "Name": "batch-job-queue",
+      "State": "Running",
+      "Region": "cn-sh2",
+      "Zone": "cn-sh2-01",
+      "Size": 2048,
+      "ChargeType": "Month",
+      "CreateTime": 1736294400,
+      "Tag": "adash:data-pipeline"
     }
   ]
 }

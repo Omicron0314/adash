@@ -2,7 +2,7 @@
   "Action": "DescribeUHostInstance",
   "RetCode": 0,
   "Message": "",
-  "TotalCount": 3,
+  "TotalCount": 5,
   "UHostSet": [
     {
       "UHostId": "uhost-shopweb1",
@@ -48,10 +48,43 @@
       "Memory": 16384,
       "UHostType": "C",
       "ChargeType": "Dynamic",
-      "Tag": "adash:batch",
+      "Tag": "adash:data-pipeline",
       "CreateTime": 1736294400,
       "IPSet": [
         { "IP": "10.20.4.21", "Type": "Internode" }
+      ]
+    },
+    {
+      "UHostId": "uhost-batch2",
+      "Name": "batch-worker-2 (stopped)",
+      "State": "Stopped",
+      "Region": "cn-sh2",
+      "Zone": "cn-sh2-01",
+      "CPU": 4,
+      "Memory": 8192,
+      "UHostType": "C",
+      "ChargeType": "Month",
+      "Tag": "adash:data-pipeline",
+      "CreateTime": 1736294400,
+      "IPSet": [
+        { "IP": "10.20.4.22", "Type": "Internode" }
+      ]
+    },
+    {
+      "UHostId": "uhost-portfolio1",
+      "Name": "portfolio-web-1",
+      "State": "Running",
+      "Region": "hk",
+      "Zone": "hk-01",
+      "CPU": 1,
+      "Memory": 2048,
+      "UHostType": "N",
+      "ChargeType": "Month",
+      "Tag": "adash:portfolio",
+      "CreateTime": 1738368000,
+      "IPSet": [
+        { "IP": "10.30.1.10", "Type": "Internode" },
+        { "IP": "129.226.88.10", "Type": "Bgp" }
       ]
     }
   ]

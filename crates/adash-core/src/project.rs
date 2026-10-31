@@ -99,8 +99,8 @@ mod tests {
             .iter()
             .find(|view| view.slug == "shop-api")
             .expect("shop-api");
-        assert_eq!(shop.resources.len(), 8);
-        assert_eq!(shop.running(&inventory), 8);
+        assert_eq!(shop.resources.len(), 9);
+        assert_eq!(shop.running(&inventory), 9);
         assert!(shop.budget.spent_cents > 0);
         assert!(shop.budget.estimate_cents > 0);
     }

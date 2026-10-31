@@ -13,7 +13,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('page', choices=['home','resources','flows','hosts','identities','snippets','port-forward','account','settings'])
     parser.add_argument('output', type=Path)
-    parser.add_argument('--selected', default='')
+    parser.add_argument('--selected', default='uhost:uhost-shopweb1')
     parser.add_argument('--flow', default='')
     parser.add_argument('--settings', choices=['general','terminal','connection'], default='general')
     parser.add_argument('--appearance', choices=['light','dark','system'], default='light')

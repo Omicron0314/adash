@@ -2,7 +2,7 @@
   "Action": "DescribeEIP",
   "RetCode": 0,
   "Message": "",
-  "TotalCount": 3,
+  "TotalCount": 5,
   "EIPSet": [
     {
       "EIPId": "eip-shopweb1",
@@ -29,6 +29,18 @@
       "Resource": { "ResourceId": "uhost-shopweb2", "ResourceType": "uhost" }
     },
     {
+      "EIPId": "eip-portfolio1",
+      "Name": "portfolio-web-eip",
+      "IP": "129.226.88.10",
+      "State": "used",
+      "Region": "hk",
+      "Bandwidth": 5,
+      "PayMode": "Month",
+      "Tag": "adash:portfolio",
+      "CreateTime": 1738368000,
+      "Resource": { "ResourceId": "uhost-portfolio1", "ResourceType": "uhost" }
+    },
+    {
       "EIPId": "eip-orphan1",
       "Name": "old-demo-eip",
       "IP": "106.75.40.88",
@@ -38,6 +50,18 @@
       "PayMode": "Dynamic",
       "Tag": "",
       "CreateTime": 1738368000,
+      "Resource": null
+    },
+    {
+      "EIPId": "eip-orphan2",
+      "Name": "hk-hackathon-eip",
+      "IP": "129.226.99.42",
+      "State": "free",
+      "Region": "hk",
+      "Bandwidth": 5,
+      "PayMode": "Dynamic",
+      "Tag": "",
+      "CreateTime": 1738454400,
       "Resource": null
     }
   ]

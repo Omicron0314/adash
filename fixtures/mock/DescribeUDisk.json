@@ -2,7 +2,7 @@
   "Action": "DescribeUDisk",
   "RetCode": 0,
   "Message": "",
-  "TotalCount": 2,
+  "TotalCount": 5,
   "DataSet": [
     {
       "UDiskId": "udisk-shopdata1",
@@ -14,6 +14,39 @@
       "UHostId": "uhost-shopweb1",
       "CreateTime": 1735689600,
       "Tag": "adash:shop-api"
+    },
+    {
+      "UDiskId": "udisk-shopbackup1",
+      "Name": "shop-api-nightly-backup",
+      "Size": 200,
+      "Status": "InUse",
+      "Region": "cn-bj2",
+      "Zone": "cn-bj2-02",
+      "UHostId": "uhost-shopweb2",
+      "CreateTime": 1735776000,
+      "Tag": "adash:shop-api"
+    },
+    {
+      "UDiskId": "udisk-batchscratch",
+      "Name": "batch-scratch",
+      "Size": 500,
+      "Status": "InUse",
+      "Region": "cn-sh2",
+      "Zone": "cn-sh2-01",
+      "UHostId": "uhost-batch1",
+      "CreateTime": 1736294400,
+      "Tag": "adash:data-pipeline"
+    },
+    {
+      "UDiskId": "udisk-portfolio1",
+      "Name": "portfolio-assets",
+      "Size": 50,
+      "Status": "InUse",
+      "Region": "hk",
+      "Zone": "hk-01",
+      "UHostId": "uhost-portfolio1",
+      "CreateTime": 1738368000,
+      "Tag": "adash:portfolio"
     },
     {
       "UDiskId": "udisk-orphan1",

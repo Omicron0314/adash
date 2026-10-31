@@ -74,12 +74,12 @@ fn inventory_summarizes_the_mock_account() {
     let output = sandbox.run(&["inventory"], None);
     let data = ok(&output);
     assert_eq!(data["mode"], "mock");
-    assert_eq!(data["resources"].as_array().expect("resources").len(), 11);
+    assert_eq!(data["resources"].as_array().expect("resources").len(), 20);
     assert!(
         data["summary"]
             .as_str()
             .expect("summary")
-            .contains("11 个资源")
+            .contains("20 个资源")
     );
 }
 
@@ -126,7 +126,7 @@ fn a_confirmed_plan_applies_exactly_once() {
     let planned = sandbox.run(&["plan-optimize"], None);
     let data = ok(&planned);
     let plan_id = data["plan_id"].as_str().expect("plan id").to_owned();
-    assert_eq!(data["monthly_delta"], "−¥104.00");
+    assert_eq!(data["monthly_delta"], "−¥500.80");
 
     let token = ok(&sandbox.run(&["approve", &plan_id], None))["token"]
         .as_str()
@@ -139,8 +139,7 @@ fn a_confirmed_plan_applies_exactly_once() {
     let again = sandbox.run(&["apply", &plan_id, "--token", &token], None);
     assert!(!error_code(&again).is_empty());
 
-    // The execution shows up in the project's flow history.
-    // The execution lands on the bucket its resources belong to.
+    // The execution lands on the project of the stopped host it released.
     let flows = sandbox.run(&["flows"], None);
     let projects: Vec<&str> = ok(&flows)["flows"]
         .as_array()
@@ -148,7 +147,12 @@ fn a_confirmed_plan_applies_exactly_once() {
         .iter()
         .filter_map(|flow| flow["project"].as_str())
         .collect();
-    assert!(projects.contains(&"unassigned"), "flows: {projects:?}");
+    assert!(projects.contains(&"data-pipeline"), "flows: {projects:?}");
+    let data = sandbox.run(&["flow", "data-pipeline"], None);
+    assert!(
+        ok(&data)["runs"].as_array().expect("runs").len() >= 2,
+        "the confirmed optimize run should be recorded"
+    );
 
     let shop = sandbox.run(&["flow", "shop-api"], None);
     let runs = ok(&shop)["runs"].as_array().expect("runs");

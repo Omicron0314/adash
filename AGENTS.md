@@ -48,6 +48,7 @@ Rust workspace，GPUI 桌面应用，Material 3 Expressive 组件来自
 | `agent/skills/*` | Markdown | 资源盘点、成本优化、流程图生成等领域知识（按需加载） |
 | `agent/prompts/system.md` | Markdown | 追加给 pi 的系统提示（角色、流程、禁区） |
 | `fixtures/mock` | JSON | Mock 账户源数据，编译进客户端；demo、测试与截图共用 |
+| `fixtures/demo/shop-api` | 本地仓库 | 仓库扫描/部署演示用的 Node + PostgreSQL + Redis + S3 清单 |
 | `docs/` | Markdown | 架构、UI 规范、路线图、决策记录、人工测试清单 |
 | `docs/design/neko.html` | HTML | 视觉参考（只读，**不要修改、不要当作依赖**） |
 | `third_party/gpui-kit-material` | git submodule | M3 组件库（固定 commit，**不要在本仓库内修改它**） |

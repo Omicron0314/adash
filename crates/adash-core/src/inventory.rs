@@ -82,6 +82,42 @@ impl Inventory {
         inventory
     }
 
+    /// Apply confirmed Mock create/release/stop/resize effects after loading
+    /// fixtures. The overlay is local state, not cloud data.
+    pub fn apply_mock_overlay(&mut self, overlay: &crate::state::MockOverlay) {
+        self.resources
+            .retain(|resource| !overlay.released.contains(&resource.id.key()));
+        for (key, replacement) in &overlay.overrides {
+            if let Some(resource) = self
+                .resources
+                .iter_mut()
+                .find(|resource| resource.id.key() == *key)
+            {
+                *resource = replacement.clone();
+            }
+        }
+        for resource in &overlay.created {
+            let key = resource.id.key();
+            if overlay.released.contains(&key) {
+                continue;
+            }
+            if !self
+                .resources
+                .iter()
+                .any(|existing| existing.id.key() == key)
+            {
+                self.resources.push(resource.clone());
+            }
+        }
+    }
+
+    /// Load fixtures and replay confirmed Mock mutations.
+    pub fn load_with_store(client: &UcloudClient, store: &crate::state::Store) -> Self {
+        let mut inventory = Self::load(client);
+        inventory.apply_mock_overlay(&store.data.mock);
+        inventory
+    }
+
     /// Look one resource up by id.
     pub fn get(&self, id: &ResourceId) -> Option<&Resource> {
         self.resources.iter().find(|resource| &resource.id == id)
@@ -392,15 +428,18 @@ mod tests {
     fn mock_account_loads_without_errors() {
         let inventory = mock_inventory();
         assert!(inventory.errors.is_empty(), "{:?}", inventory.errors);
-        assert_eq!(inventory.resources.len(), 11);
-        assert_eq!(inventory.balance_yuan, Some(1280.55));
+        assert_eq!(inventory.resources.len(), 20);
+        assert_eq!(inventory.balance_yuan, Some(3280.55));
     }
 
     #[test]
     fn tags_become_projects() {
         let inventory = mock_inventory();
-        assert_eq!(inventory.projects(), vec!["batch", "shop-api"]);
-        assert_eq!(inventory.of_project(Some("shop-api")).len(), 8);
+        assert_eq!(
+            inventory.projects(),
+            vec!["data-pipeline", "portfolio", "shop-api"]
+        );
+        assert_eq!(inventory.of_project(Some("shop-api")).len(), 9);
     }
 
     #[test]
@@ -426,10 +465,7 @@ mod tests {
     #[test]
     fn monthly_total_is_positive_and_matches_price_table() {
         let inventory = mock_inventory();
-        // 2×2C hosts + 8C host + disk(100+200GiB) + udb + redis + ulb + 3 eip
-        assert_eq!(
-            inventory.monthly_total_cents(),
-            18640 * 2 + 74560 + 12000 + 9800 + 7700 + 1800 + 7200
-        );
+        // 5 hosts, 5 disks, 2 UDB, 2 Redis, 1 ULB, 5 EIP
+        assert_eq!(inventory.monthly_total_cents(), 249_240);
     }
 }

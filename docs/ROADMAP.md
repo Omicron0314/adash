@@ -38,7 +38,8 @@
 - [x] `flow`：节点/连线/证据（EIP 绑定、ULB 后端、云盘挂载、推断）+ 分层布局 + 执行回放
 - [x] `optimizer`：孤儿 EIP、未挂载云盘、停机仍计费（带金额）
 - [x] `state`：`state.json`，0600；计划/批准/项目/执行记录
-- [x] `executor`：GUI 与 CLI 共用的执行路径（Mock 记录执行）
+- [x] `executor`：GUI 与 CLI 共用的执行路径；Mock 计划应用本地覆盖层（创建/释放/停机/改配），
+      资源页、流程图和代理读取同步，真实写 API 仍未接入
 - [x] `adash-tool` 命令面：read / plan / mutate 分级 + 集成测试
       证据：`cargo test --workspace` 45 passed；`tests/flow.rs` 覆盖无批准拒绝、错令牌拒绝、
       一次性执行、计划被篡改拒绝
@@ -127,8 +128,10 @@ catussh 的终端 / 文件 / 监控 / 身份 / 片段 / 端口转发全部保留
 
 ## M5 Demo 打磨
 
-- [ ] `docs/DEMO.md` 剧本（5 分钟版 + 2 分钟版）
-- [ ] `fixtures/mock` 数据讲得通（一个像样的项目：web ×2 + MySQL + Redis + EIP + ULB + US3）
+- [x] `docs/DEMO.md` 剧本（5 分钟版 + 2 分钟版），覆盖盘点、流程回放、4 条省钱项、Mock 部署/释放、账户边界。
+      证据：`docs/DEMO.md`。
+- [x] `fixtures/mock` 演示账户：3 个项目、20 个资源（含停机主机/孤儿 EIP/未挂载盘）、4 条浪费项；
+      本地仓库样例 `fixtures/demo/shop-api`。证据：`adash-tool inventory` 20 个资源、`docs/DEMO.md`。
 - [ ] 冷启动 < 2s、首屏骨架屏、代理连接失败有可读错误
 - [x] 开发用 `.desktop` 入口、图标与构建安装脚本；已通过 `gtk-launch adash` 验证。
       每次修改后运行 `python3 scripts/build-desktop.py` 更新启动器。

@@ -280,7 +280,7 @@ impl Adash {
             flow_project: None,
             replay: Replay::default(),
             session_tab: 0,
-            flow_compact: false,
+            flow_compact: true,
             flow_selected: None,
             profiles,
             profile_error,
@@ -426,7 +426,7 @@ impl Adash {
             return;
         };
         self.loading = true;
-        let inventory = Inventory::load(client);
+        let inventory = Inventory::load_with_store(client, &self.store);
         let billing = Billing::load(client, &inventory);
         self.projects = project_views(
             &inventory,
@@ -529,7 +529,12 @@ impl Adash {
     }
 
     fn default_flow_project(&self) -> Option<String> {
-        self.inventory.flow_projects().first().cloned()
+        let projects = self.inventory.flow_projects();
+        if projects.iter().any(|project| project == "shop-api") {
+            Some("shop-api".to_owned())
+        } else {
+            projects.first().cloned()
+        }
     }
 
     /// The flow of the selected project, with runs.
@@ -756,7 +761,7 @@ impl Adash {
                     let _ = self.store.save();
                     self.messages.push(ChatMessage::agent(
                         format!(
-                            "已记录 Mock 执行，未修改真实云资源。项目 {} 的服务图已更新。",
+                            "Mock 执行完成：本地演示资源清单已更新，真实云资源未变。项目 {} 的流程记录已写入。",
                             outcome.project
                         ),
                         true,

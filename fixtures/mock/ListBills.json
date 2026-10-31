@@ -2,62 +2,146 @@
   "Action": "ListBills",
   "RetCode": 0,
   "Message": "",
-  "TotalCount": 8,
+  "TotalCount": 20,
   "Bills": [
     {
       "Amount": 186.4,
       "ResourceId": "uhost-shopweb1",
       "Product": "UHost",
-      "Date": "2025-10-01",
+      "Date": "2026-10-01",
       "ProjectId": "org-demo"
     },
     {
       "Amount": 186.4,
       "ResourceId": "uhost-shopweb2",
       "Product": "UHost",
-      "Date": "2025-10-01",
-      "ProjectId": "org-demo"
-    },
-    {
-      "Amount": 340.2,
-      "ResourceId": "uhost-batch1",
-      "Product": "UHost",
-      "Date": "2025-10-01",
+      "Date": "2026-10-01",
       "ProjectId": "org-demo"
     },
     {
       "Amount": 98.0,
       "ResourceId": "udb-shopdb1",
       "Product": "UDB",
-      "Date": "2025-10-01",
+      "Date": "2026-10-01",
       "ProjectId": "org-demo"
     },
     {
       "Amount": 76.5,
       "ResourceId": "umem-shopcache1",
       "Product": "UMem",
-      "Date": "2025-10-01",
+      "Date": "2026-10-01",
+      "ProjectId": "org-demo"
+    },
+    {
+      "Amount": 18.0,
+      "ResourceId": "ulb-shopapi1",
+      "Product": "ULB",
+      "Date": "2026-10-01",
       "ProjectId": "org-demo"
     },
     {
       "Amount": 24.0,
       "ResourceId": "eip-shopweb1",
       "Product": "UNet",
-      "Date": "2025-10-01",
+      "Date": "2026-10-01",
       "ProjectId": "org-demo"
     },
     {
       "Amount": 24.0,
       "ResourceId": "eip-shopweb2",
       "Product": "UNet",
-      "Date": "2025-10-01",
+      "Date": "2026-10-01",
+      "ProjectId": "org-demo"
+    },
+    {
+      "Amount": 40.0,
+      "ResourceId": "udisk-shopdata1",
+      "Product": "UDisk",
+      "Date": "2026-10-01",
+      "ProjectId": "org-demo"
+    },
+    {
+      "Amount": 80.0,
+      "ResourceId": "udisk-shopbackup1",
+      "Product": "UDisk",
+      "Date": "2026-10-01",
+      "ProjectId": "org-demo"
+    },
+    {
+      "Amount": 745.6,
+      "ResourceId": "uhost-batch1",
+      "Product": "UHost",
+      "Date": "2026-10-01",
+      "ProjectId": "org-demo"
+    },
+    {
+      "Amount": 372.8,
+      "ResourceId": "uhost-batch2",
+      "Product": "UHost",
+      "Date": "2026-10-01",
+      "ProjectId": "org-demo"
+    },
+    {
+      "Amount": 98.0,
+      "ResourceId": "udb-analytics1",
+      "Product": "UDB",
+      "Date": "2026-10-01",
+      "ProjectId": "org-demo"
+    },
+    {
+      "Amount": 76.5,
+      "ResourceId": "umem-batchqueue1",
+      "Product": "UMem",
+      "Date": "2026-10-01",
+      "ProjectId": "org-demo"
+    },
+    {
+      "Amount": 200.0,
+      "ResourceId": "udisk-batchscratch",
+      "Product": "UDisk",
+      "Date": "2026-10-01",
+      "ProjectId": "org-demo"
+    },
+    {
+      "Amount": 93.2,
+      "ResourceId": "uhost-portfolio1",
+      "Product": "UHost",
+      "Date": "2026-10-01",
+      "ProjectId": "org-demo"
+    },
+    {
+      "Amount": 24.0,
+      "ResourceId": "eip-portfolio1",
+      "Product": "UNet",
+      "Date": "2026-10-01",
+      "ProjectId": "org-demo"
+    },
+    {
+      "Amount": 20.0,
+      "ResourceId": "udisk-portfolio1",
+      "Product": "UDisk",
+      "Date": "2026-10-01",
       "ProjectId": "org-demo"
     },
     {
       "Amount": 48.0,
       "ResourceId": "eip-orphan1",
       "Product": "UNet",
-      "Date": "2025-10-01",
+      "Date": "2026-10-01",
+      "ProjectId": "org-demo"
+    },
+    {
+      "Amount": 24.0,
+      "ResourceId": "eip-orphan2",
+      "Product": "UNet",
+      "Date": "2026-10-01",
+      "ProjectId": "org-demo"
+    },
+    {
+      "Amount": 80.0,
+      "ResourceId": "udisk-orphan1",
+      "Product": "UDisk",
+      "Date": "2026-10-01",
       "ProjectId": "org-demo"
     }
   ]
