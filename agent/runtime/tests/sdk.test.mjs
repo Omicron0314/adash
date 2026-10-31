@@ -12,19 +12,22 @@ import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-const tool = resolve(process.env.ADASH_TOOL ?? join(root, 'target/debug/adash-tool'));
-const runtime = fileURLToPath(new URL('../dist/index.js', import.meta.url));
+const target = JSON.parse(execFileSync('cargo',['metadata','--format-version=1','--no-deps'],{cwd:root,encoding:'utf8'})).target_directory;
+const tool = resolve(process.env.ADASH_TOOL ?? join(target,'debug',process.platform==='win32'?'adash-tool.exe':'adash-tool'));
+const runtime = process.env.ADASH_TEST_RUNTIME ?? fileURLToPath(new URL('../dist/index.js', import.meta.url));
+const resourceRoot = process.env.ADASH_TEST_RESOURCES ?? root;
 const tools = ['ucloud_inventory','ucloud_describe_resource','ucloud_projects','ucloud_billing','ucloud_flows','ucloud_flow','ucloud_plan_deploy','ucloud_plan_optimize','ucloud_plan_stop','ucloud_apply_plan'].sort();
 class Host {
   lines=[]; log=''; events=new EventEmitter();
-  constructor(env) {
+  constructor(env,provider) {
+    this.provider=provider;
     this.child=spawn(process.execPath,[runtime],{env,stdio:['pipe','pipe','pipe']});
     createInterface({input:this.child.stdout}).on('line',line=>{this.lines.push(JSON.parse(line));this.events.emit('change');});
     this.child.stderr.on('data',chunk=>this.log=(this.log+chunk).slice(-65536));
     this.closed=new Promise(resolve=>this.child.once('close',(code)=>{this.exited=true;this.events.emit('change');resolve(code);}));
     this.child.on('error',error=>{this.log+=error.message;this.events.emit('change');});
   }
-  send(command) { this.child.stdin.write(JSON.stringify(command)+'\n'); }
+  send(command) { if(command.type==='start' && command.provider===undefined) command={...command,provider:this.provider}; this.child.stdin.write(JSON.stringify(command)+'\n'); }
   wait(type, from=0, predicate=()=>true) {
     return new Promise((resolve,reject)=>{
       const cleanup=()=>{clearTimeout(timer);this.events.off('change',check);};
@@ -47,17 +50,17 @@ test('SDK startup, tool boundary, confirmation, streaming, abort and model error
   assert.ok(existsSync(tool),'build the Rust CLI first: cargo build -p adash-tool');
   const directory=mkdtempSync(join(tmpdir(),'adash-sdk-test-'));
   const workspace=join(directory,'workspace');
-  const config=join(directory,'config');
   const state=join(directory,'state');
   mkdirSync(join(workspace,'agent/extensions'),{recursive:true});
   mkdirSync(join(workspace,'agent/skills'),{recursive:true});
   mkdirSync(join(workspace,'.pi/extensions'),{recursive:true});
-  mkdirSync(config,{recursive:true});
-  symlinkSync(join(root,'agent/extensions/ucloud'),join(workspace,'agent/extensions/ucloud'));
+  symlinkSync(join(resourceRoot,'agent/extensions/ucloud'),join(workspace,'agent/extensions/ucloud'));
   writeFileSync(join(workspace,'.pi/extensions/forbidden.ts'),'throw new Error("FORBIDDEN_PROJECT_EXTENSION");');
   writeFileSync(join(workspace,'AGENTS.md'),'PRIVATE_CONTEXT_MUST_NOT_APPEAR');
-  const requests=[];
+  const requests=[]; const paths=[];
   const server=createServer(async(req,res)=>{
+    assert.equal(req.headers.authorization,'Bearer LOCAL_TEST_KEY');
+    paths.push(req.url);
     let raw='';for await(const chunk of req)raw+=chunk;
     const body=JSON.parse(raw);requests.push(body);
     const messages=body.messages;
@@ -65,7 +68,7 @@ test('SDK startup, tool boundary, confirmation, streaming, abort and model error
     const text=content=>typeof content==='string'?content:(content??[]).filter(part=>part.type==='text').map(part=>part.text).join('\n');
     const scenario=text(messages[lastUser].content);
     const results=messages.slice(lastUser+1).filter(message=>message.role==='tool');
-    if(scenario==='failure'){res.writeHead(400,{'Content-Type':'application/json'});res.end(JSON.stringify({error:{message:'local model failure',type:'invalid_request_error'}}));return;}
+    if(scenario==='failure'){res.writeHead(400,{'Content-Type':'application/json'});res.end(JSON.stringify({error:{message:'local model failure LOCAL_TEST_KEY',type:'invalid_request_error'}}));return;}
     res.writeHead(200,{'Content-Type':'text/event-stream'});
     const chunk=(delta,finish=null)=>res.write(`data: ${JSON.stringify({id:'local-test',object:'chat.completion.chunk',created:1,model:body.model,choices:[{index:0,delta,finish_reason:finish}]})}\n\n`);
     const call=(name,args)=>{chunk({role:'assistant',tool_calls:[{index:0,id:`call-${requests.length}`,type:'function',function:{name,arguments:JSON.stringify(args)}}]});chunk({},'tool_calls');res.end('data: [DONE]\n\n');};
@@ -75,17 +78,17 @@ test('SDK startup, tool boundary, confirmation, streaming, abort and model error
       if(results.length===0){call('ucloud_plan_deploy',{project:`sdk-${scenario}`,count:1});return;}
       if(results.length===1){const plan=text(results[0].content).match(/plan_id: (\S+)/);assert.ok(plan,'tool returned a plan ID');call('ucloud_apply_plan',{plan_id:plan[1]});return;}
     }
-    chunk({role:'assistant',content:'SDK '});chunk({content:'完成'});chunk({},'stop');res.end('data: [DONE]\n\n');
+    chunk({role:'assistant',content:'SDK '});chunk({content:'LOCAL_TEST_KEY 完成'});chunk({},'stop');res.end('data: [DONE]\n\n');
   });
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-  writeFileSync(join(config,'models.json'),JSON.stringify({providers:{'adash-test':{baseUrl:`http://127.0.0.1:${server.address().port}/v1`,api:'openai-completions',apiKey:'LOCAL_TEST_KEY',models:[{id:'nested/model',contextWindow:32768,maxTokens:1024,reasoning:false,input:['text']}]}}}));
-  const env={...Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('ADASH_'))),ADASH_ROOT:workspace,ADASH_TOOL:tool,ADASH_DATA_DIR:state,ADASH_MODEL:'adash-test/nested/model',PI_CODING_AGENT_DIR:config,UDASH_MOCK:'1',UCLOUD_PRIVATE_KEY:'UCLOUD_PRIVATE_SENTINEL'};
-  const host=new Host(env);
+  const env={...Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('ADASH_'))),ADASH_ROOT:workspace,ADASH_TOOL:tool,ADASH_DATA_DIR:state,UDASH_MOCK:'1',UCLOUD_PRIVATE_KEY:'UCLOUD_PRIVATE_SENTINEL'};
+  const provider={endpoint:`http://127.0.0.1:${server.address().port}/v1`,api_key:'LOCAL_TEST_KEY',model:'nested/model',api:'openai-completions',context_window:32768,max_tokens:1024};
+  const host=new Host(env,provider);
   t.after(async()=>{await host.dispose();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));rmSync(directory,{recursive:true,force:true});});
   const store=()=>JSON.parse(readFileSync(join(state,'state.json'),'utf8'));
   await t.test('prompt waits for startup; only the ten cloud tools are active',async()=>{
-    host.send({type:'start'});host.send({type:'prompt',message:'inventory'});
-    const ready=await host.wait('ready');assert.equal(ready.provider,'adash-test');assert.equal(ready.model,'nested/model');assert.deepEqual(ready.tools.sort(),tools);
+    host.send({type:'start',session_dir:join(state,'sessions')});host.send({type:'prompt',message:'inventory'});
+    const ready=await host.wait('ready');assert.equal(ready.provider,'adash-configured');assert.equal(ready.model,'nested/model');assert.deepEqual(ready.tools.sort(),tools);
     await host.wait('agent_settled');
     assert.ok(host.lines.filter(line=>line.type==='message_update').length>=2);
     assert.ok(host.lines.some(line=>line.type==='tool_execution_end'&&line.toolName==='ucloud_inventory'&&!line.isError));
@@ -119,10 +122,10 @@ test('SDK startup, tool boundary, confirmation, streaming, abort and model error
     assert.ok(!JSON.stringify(host.lines).includes('LOCAL_TEST_KEY'));
   });
   await t.test('startup failure rejects queued prompts and leaves no active session',async()=>{
-    const failed=new Host({...env,ADASH_MODEL:'adash-test/missing/nested-model'});
+    const failed=new Host(env,null);
     try {
       failed.send({type:'start'});failed.send({type:'prompt',message:'inventory'});
-      assert.match((await failed.wait('startup_error')).error,/missing\/nested-model/);
+      assert.match((await failed.wait('startup_error')).error,/设置.*AI/);
       await failed.wait('error');failed.send({type:'health'});
       assert.equal((await failed.wait('health')).started,false);
     } finally { await failed.dispose(); }
@@ -137,8 +140,18 @@ test('SDK startup, tool boundary, confirmation, streaming, abort and model error
     }};
     check(state);
   });
+  await t.test('another user endpoint path and arbitrary model are used without global provider defaults',async()=>{
+    const alternate = new Host(env,{...provider,endpoint:`http://127.0.0.1:${server.address().port}/tenant/v1`,model:'another/vendor/model'});
+    try {
+      alternate.send({type:'start',session_dir:join(state,'alternate-sessions')});
+      assert.equal((await alternate.wait('ready')).model,'another/vendor/model');
+      alternate.send({type:'prompt',message:'hello'});await alternate.wait('agent_settled');
+      assert.equal(paths.at(-1),'/tenant/v1/chat/completions');
+      assert.equal(requests.at(-1).model,'another/vendor/model');
+    } finally { await alternate.dispose(); }
+  });
   await t.test('set_model preserves nested IDs',async()=>{
-    const from=host.lines.length;host.send({type:'set_model',model:'adash-test/nested/model'});
-    assert.equal((await host.wait('model',from)).model,'adash-test/nested/model');
+    const from=host.lines.length;host.send({type:'set_model',model:'nested/model'});
+    assert.equal((await host.wait('model',from)).model,'nested/model');
   });
 });

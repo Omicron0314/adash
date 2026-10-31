@@ -66,6 +66,7 @@ pub struct ConfirmRequest {
 
 /// Where answers come from.
 pub enum Backend {
+    Starting(std::sync::mpsc::Receiver<Result<AgentHost, String>>),
     /// The embedded pi SDK host.
     Sdk(Box<AgentHost>),
     /// Local responder, with the reason the SDK is unavailable.
@@ -88,6 +89,7 @@ pub struct Agent {
     pub model: Option<String>,
     /// Tools the SDK session exposes, as reported at startup.
     pub tools: Vec<String>,
+    queued_prompt: Option<String>,
 }
 
 impl Agent {
@@ -95,21 +97,34 @@ impl Agent {
     ///
     /// On any failure the app stays usable: the reason is kept for the banner
     /// and the local responder takes over.
-    pub fn connect() -> Self {
+    pub fn connect(mode: ucloud_api::Mode) -> Self {
+        #[cfg(feature = "ui-test-hooks")]
         if std::env::var_os("ADASH_OFFLINE").is_some() {
-            return Self::offline("ADASH_OFFLINE 已启用".to_owned());
+            return Self::offline("测试构建已启用离线模式".into());
         }
-        match Self::spawn_host() {
-            Ok(host) => Self {
-                backend: Backend::Sdk(Box::new(host)),
-                pending: None,
-                streaming: false,
-                status: Some("正在启动代理…".to_owned()),
-                failure: None,
-                model: None,
-                tools: Vec::new(),
-            },
-            Err(reason) => Self::offline(reason),
+        let mut settings = match crate::ai::AiSettings::load() {
+            Ok(settings) => settings,
+            Err(error) => return Self::offline(error),
+        };
+        if settings.endpoint.is_empty() {
+            return Self::offline("请在设置 → AI 中填写 Endpoint、API key 和模型".into());
+        }
+        if let Err(error) = settings.validate() {
+            return Self::offline(error);
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(Self::spawn_host(settings, mode));
+        });
+        Self {
+            backend: Backend::Starting(rx),
+            pending: None,
+            streaming: false,
+            status: Some("正在连接 AI…".into()),
+            failure: None,
+            model: None,
+            tools: Vec::new(),
+            queued_prompt: None,
         }
     }
 
@@ -122,11 +137,16 @@ impl Agent {
             failure: None,
             model: None,
             tools: Vec::new(),
+            queued_prompt: None,
         }
     }
 
-    fn spawn_host() -> Result<AgentHost, String> {
-        let root = repo_root();
+    fn spawn_host(
+        settings: crate::ai::AiSettings,
+        mode: ucloud_api::Mode,
+    ) -> Result<AgentHost, String> {
+        let root = adash_paths::resource_dir()
+            .ok_or("未找到应用资源，请检查安装目录或设置 ADASH_RESOURCES")?;
         let script = root.join("agent/runtime/dist/index.js");
         if !script.exists() {
             return Err(format!(
@@ -138,10 +158,8 @@ impl Agent {
         if !extension.exists() {
             return Err(format!("找不到扩展 {}", extension.display()));
         }
-        let tool = PathBuf::from(
-            std::env::var("ADASH_TOOL")
-                .unwrap_or_else(|_| root.join("target/debug/adash-tool").display().to_string()),
-        );
+        let tool =
+            adash_paths::tool_path().ok_or("未找到 adash-tool，请将其放在应用同目录或 PATH 中")?;
         if !tool.exists() {
             return Err(format!(
                 "找不到 adash-tool（{}），先 cargo build -p adash-tool",
@@ -154,16 +172,18 @@ impl Agent {
             script,
             root,
             tool,
-            model: std::env::var("ADASH_MODEL").ok(),
+            mock: mode == ucloud_api::Mode::Mock && ucloud_api::transport::mock_enabled(),
             session_dir,
         };
-        AgentHost::spawn(config).map_err(|error| format!("无法启动代理宿主：{error}"))
+        let key = settings.secret()?;
+        AgentHost::spawn_with_provider(config, Some(settings.startup(&key)))
+            .map_err(|_| "无法启动代理宿主，请检查 Node.js 是否已安装".into())
     }
 
     /// Whether the SDK host is running (not necessarily ready yet).
     #[must_use]
     pub fn is_online(&self) -> bool {
-        matches!(self.backend, Backend::Sdk(_))
+        matches!(self.backend, Backend::Sdk(_) | Backend::Starting(_))
     }
 
     /// Why the app is offline.
@@ -171,12 +191,17 @@ impl Agent {
     pub fn offline_reason(&self) -> Option<&str> {
         match &self.backend {
             Backend::Offline(reason) => Some(reason),
-            Backend::Sdk(_) => None,
+            Backend::Sdk(_) | Backend::Starting(_) => None,
         }
     }
 
     /// Send a prompt.
     pub fn prompt(&mut self, text: &str) -> bool {
+        if matches!(self.backend, Backend::Starting(_)) {
+            self.queued_prompt = Some(text.into());
+            self.streaming = true;
+            return true;
+        }
         let Backend::Sdk(host) = &mut self.backend else {
             return false;
         };
@@ -214,22 +239,52 @@ impl Agent {
     /// `text` receives streaming deltas; the returned value is `true` when the
     /// run finished (so the caller can stop polling).
     pub fn pump(&mut self, mut on_text: impl FnMut(&str), mut on_tool: impl FnMut(String)) -> bool {
+        if let Backend::Starting(rx) = &self.backend {
+            match rx.try_recv() {
+                Ok(Ok(host)) => {
+                    self.backend = Backend::Sdk(Box::new(host));
+                    if let Some(text) = self.queued_prompt.take() {
+                        self.prompt(&text);
+                    }
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => return false,
+                result => {
+                    let reason = match result {
+                        Ok(Err(reason)) => reason,
+                        _ => "AI 连接任务已退出".into(),
+                    };
+                    self.backend = Backend::Offline(reason.clone());
+                    self.failure = Some(reason);
+                    self.streaming = false;
+                    self.status = None;
+                    self.queued_prompt = None;
+                    return true;
+                }
+            }
+        }
         let Backend::Sdk(host) = &self.backend else {
             return true;
         };
         let mut settled = false;
+        let mut offline = None;
         for event in host.try_poll() {
             match event {
+                AgentEvent::Closed => {
+                    let reason = "AI 宿主已退出，请检查 Node.js 版本与应用资源".to_owned();
+                    self.failure = Some(reason.clone());
+                    offline = Some(reason);
+                    settled = true;
+                }
                 AgentEvent::StartupError(reason) => {
-                    self.failure = Some(reason);
+                    self.failure = Some(reason.clone());
+                    offline = Some(reason);
                     settled = true;
                 }
                 AgentEvent::Ready(value) => {
-                    self.model = Some(format!(
-                        "{}/{}",
-                        value.get("provider").and_then(Value::as_str).unwrap_or(""),
-                        value.get("model").and_then(Value::as_str).unwrap_or("")
-                    ));
+                    self.model = value
+                        .get("model")
+                        .and_then(Value::as_str)
+                        .map(ToOwned::to_owned);
                     self.tools = value
                         .get("tools")
                         .and_then(Value::as_array)
@@ -313,6 +368,9 @@ impl Agent {
                 },
             }
         }
+        if let Some(reason) = offline {
+            self.backend = Backend::Offline(reason);
+        }
         if settled {
             self.streaming = false;
             self.status = None;
@@ -322,6 +380,13 @@ impl Agent {
 
     /// Stop the current run.
     pub fn abort(&mut self) {
+        self.queued_prompt = None;
+        if matches!(self.backend, Backend::Starting(_)) {
+            self.backend = Backend::Offline("AI 启动已取消，可在设置中重新连接".into());
+            self.streaming = false;
+            self.status = None;
+            return;
+        }
         if let Backend::Sdk(host) = &self.backend {
             if let Err(error) = host.abort() {
                 self.failure = Some(error.to_string());
@@ -336,22 +401,10 @@ impl Agent {
     }
 }
 
-/// The repository root, so the host can be pointed at this checkout.
-#[must_use]
-pub fn repo_root() -> PathBuf {
-    if let Ok(root) = std::env::var("ADASH_ROOT") {
-        return PathBuf::from(root);
-    }
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
-
 /// Where adash keeps state and SDK sessions.
 #[must_use]
 pub fn data_dir() -> Option<PathBuf> {
-    if let Ok(path) = std::env::var("ADASH_DATA_DIR") {
-        return Some(PathBuf::from(path));
-    }
-    dirs::data_dir().map(|dir| dir.join("adash"))
+    Some(adash_paths::data_dir())
 }
 
 /// True when `path` looks like the built SDK host.

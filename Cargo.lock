@@ -87,27 +87,41 @@ name = "adash-app"
 version = "0.1.0"
 dependencies = [
  "adash-core",
+ "adash-paths",
  "adash-ssh",
  "agent-sdk",
  "dirs 6.0.0",
  "gpui-kit",
  "gpui-kit-material",
+ "keyring",
+ "serde",
  "serde_json",
+ "tempfile",
  "ucloud-api",
+ "url",
  "vt100",
+ "zeroize",
 ]
 
 [[package]]
 name = "adash-core"
 version = "0.1.0"
 dependencies = [
- "dirs 6.0.0",
+ "adash-paths",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "thiserror 2.0.21",
  "ucloud-api",
  "uuid",
+]
+
+[[package]]
+name = "adash-paths"
+version = "0.1.0"
+dependencies = [
+ "dirs 6.0.0",
+ "tempfile",
 ]
 
 [[package]]
@@ -132,6 +146,7 @@ name = "adash-tool"
 version = "0.1.0"
 dependencies = [
  "adash-core",
+ "adash-paths",
  "serde",
  "serde_json",
  "ucloud-api",
@@ -7315,7 +7330,6 @@ name = "ucloud-api"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
- "dirs 6.0.0",
  "reqwest",
  "serde",
  "serde_json",

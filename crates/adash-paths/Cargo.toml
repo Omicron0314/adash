@@ -1,0 +1,12 @@
+[package]
+name = "adash-paths"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+dirs = "6"
+
+[dev-dependencies]
+tempfile = "3"

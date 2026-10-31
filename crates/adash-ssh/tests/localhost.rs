@@ -57,13 +57,23 @@ impl Server {
         fs::write(
             &config,
             format!(
-                "Port {port}\nListenAddress 127.0.0.1\nHostKey {}\nPidFile {}\nAuthorizedKeysFile {}\nStrictModes no\nUsePAM no\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPubkeyAuthentication yes\nPermitRootLogin yes\nAllowUsers {user}\nAllowTcpForwarding yes\nSubsystem sftp /usr/lib/ssh/sftp-server\nLogLevel ERROR\n",
+                "Port {port}\nListenAddress 127.0.0.1\nHostKey {}\nPidFile {}\nAuthorizedKeysFile {}\nStrictModes no\nUsePAM no\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPubkeyAuthentication yes\nPermitRootLogin yes\nAllowUsers {user}\nAllowTcpForwarding yes\nSubsystem sftp internal-sftp\nLogLevel ERROR\n",
                 host_key.display(),
                 directory.path().join("sshd.pid").display(),
                 directory.path().join("authorized_keys").display()
             ),
         )?;
-        let child = Command::new("/usr/bin/sshd")
+        let sshd = std::env::var_os("ADASH_TEST_SSHD")
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("PATH").and_then(|paths| {
+                    std::env::split_paths(&paths)
+                        .map(|path| path.join("sshd"))
+                        .find(|path| path.is_file())
+                })
+            })
+            .ok_or_else(|| anyhow::anyhow!("sshd not found on PATH; set ADASH_TEST_SSHD"))?;
+        let child = Command::new(sshd)
             .args(["-D", "-e", "-f"])
             .arg(&config)
             .stdin(Stdio::null())

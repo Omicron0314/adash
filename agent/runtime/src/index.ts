@@ -7,15 +7,16 @@
  * host itself only speaks framed JSONL and never exposes credentials or
  * session files to the GUI.
  */
-import { parseModelChoice, projectEvent } from "./protocol.js";
+import { projectEvent } from "./protocol.js";
+import { configuredRuntime, providerId } from "./provider.js";
 import { createInterface } from "node:readline";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import {
   createAgentSession,
   DefaultResourceLoader,
-  ModelRuntime,
   SessionManager,
   SettingsManager,
   type AgentSession,
@@ -23,11 +24,10 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 const root = resolve(process.env.ADASH_ROOT ?? join(dirname(fileURLToPath(import.meta.url)), "../../.."));
-const tool = process.env.ADASH_TOOL ?? join(root, "target/debug/adash-tool");
+const tool = process.env.ADASH_TOOL ?? "adash-tool";
 const extension = join(root, "agent/extensions/ucloud/index.ts");
 const skills = join(root, "agent/skills");
 const systemPromptFile = join(root, "agent/prompts/system.md");
-const modelId = process.env.ADASH_MODEL;
 type Command = Record<string, unknown>;
 let session: AgentSession | undefined;
 let unsubscribe: (() => void) | undefined;
@@ -35,14 +35,25 @@ let lastText = "";
 let starting: Promise<void> | undefined;
 let confirmId = 0;
 const confirmations = new Map<string, (confirmed: boolean) => void>();
-const emit = (value: unknown) => process.stdout.write(JSON.stringify(value) + "\n");
+let activeKey = "";
+const redact = (text: string) => activeKey ? text.split(activeKey).join("[redacted]") : text;
+const emit = (value: unknown) => {
+  let line = JSON.stringify(value);
+  if (activeKey) line = line.split(JSON.stringify(activeKey).slice(1, -1)).join("[redacted]");
+  process.stdout.write(line + "\n");
+};
 const imagePath = (name: string) => join(root, "assets", name);
 const verify: (condition: unknown, message: string) => asserts condition = (condition, message) => {
   if (!condition) throw new Error(message);
 };
 
-function agentDir() {
-  return process.env.ADASH_AGENT_DIR ?? join(process.env.XDG_DATA_HOME ?? join(process.env.HOME ?? ".", ".local", "share"), "adash", "agent");
+function agentDir(sessionDir?: string) {
+  if (sessionDir) return join(dirname(sessionDir), "agent");
+  if (process.env.ADASH_DATA_DIR) return join(process.env.ADASH_DATA_DIR, "agent");
+  const base = process.platform === "win32" ? (process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"))
+    : process.platform === "darwin" ? join(homedir(), "Library", "Application Support")
+    : (process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"));
+  return join(base, "adash", "agent");
 }
 
 function uiBindings(): ExtensionUIContext {
@@ -90,7 +101,7 @@ function uiBindings(): ExtensionUIContext {
   return context as unknown as ExtensionUIContext;
 }
 
-type StartCommand = { model?: string; session_dir?: string };
+type StartCommand = { provider?: unknown; session_dir?: string };
 
 // The SDK context is used only for confirmation/status notifications; its
 // terminal-renderer theme is never used by this GPUI application.
@@ -104,11 +115,13 @@ const theme = {
 };
 
 async function start(command: StartCommand) {
-  const modelRuntime = await ModelRuntime.create({ allowModelNetwork: false });
+  const directory = agentDir(command.session_dir);
+  const { runtime: modelRuntime, model } = await configuredRuntime(command.provider, directory);
+  activeKey = (command.provider as { api_key: string }).api_key;
   const settings = SettingsManager.inMemory({ compaction: { enabled: true }, retry: { enabled: true, maxRetries: 2 } });
   const loader = new DefaultResourceLoader({
     cwd: root,
-    agentDir: agentDir(),
+    agentDir: directory,
     // Standard discovery is off; the pinned extension and repo skills are explicit.
     noExtensions: true,
     noSkills: true,
@@ -121,30 +134,33 @@ async function start(command: StartCommand) {
     appendSystemPrompt: existsSync(systemPromptFile) ? [await (await import("node:fs/promises")).readFile(systemPromptFile, "utf8")] : [],
   });
   await loader.reload();
-  const choices = command.model || modelId;
-  let model;
-  if (choices) {
-    const { provider, id } = parseModelChoice(choices);
-    model = provider ? modelRuntime.getModel(provider, id) : modelRuntime.getAvailableSnapshot().find((entry) => entry.id === id);
-    verify(model, `模型不可用：${choices}`);
-  }
   const created = await createAgentSession({
     cwd: root,
-    agentDir: agentDir(),
+    agentDir: directory,
     modelRuntime,
     settingsManager: settings,
     resourceLoader: loader,
     model,
-    sessionManager: SessionManager.create(root, command.session_dir),
+    sessionManager: SessionManager.create(root, command.session_dir ?? join(dirname(directory), "sessions")),
     // No shell or edit tools. The extension is the only action surface.
     tools: ["ucloud_inventory", "ucloud_describe_resource", "ucloud_projects", "ucloud_billing", "ucloud_flows", "ucloud_flow", "ucloud_plan_deploy", "ucloud_plan_optimize", "ucloud_plan_stop", "ucloud_apply_plan"],
   });
   session = created.session;
   unsubscribe?.();
   unsubscribe = session.subscribe((event) => {
-    if (event.type === "message_end") { lastText = session?.getLastAssistantText() ?? lastText; }
+    if (event.type === "message_end") {
+      if (event.message.role === "assistant") {
+        if (event.message.errorMessage) event.message.errorMessage = redact(event.message.errorMessage);
+        for (const block of event.message.content) { if (block.type === "text") block.text = redact(block.text); }
+      }
+      lastText = session?.getLastAssistantText() ?? lastText;
+    }
     const projected = projectEvent(event);
-    if (projected) emit(projected);
+    if (projected) {
+      const delta = projected.assistantMessageEvent as { delta?: string } | undefined;
+      if (typeof delta?.delta === "string") delta.delta = redact(delta.delta);
+      emit(projected);
+    }
   });
   await session.bindExtensions({ uiContext: uiBindings(), mode: "rpc" });
   emit({ type: "ready", provider: session.model?.provider ?? "", model: session.model?.id ?? "", tools: session.getActiveToolNames?.() ?? [] });
@@ -181,13 +197,12 @@ const handlers: Record<string, (command: Command) => unknown> = {
     await session?.abort();
   },
   async set_model(command: Command) {
-    const { provider, id } = parseModelChoice(String(command.model ?? ""));
-    const model = session?.modelRuntime.getModel(provider, id);
-    if (model && session) { await session.setModel(model); emit({ type: "model", model: `${provider}/${id}` }); }
+    const id = String(command.model ?? "");
+    const model = session?.modelRuntime.getModel(providerId, id);
+    if (model && session) { await session.setModel(model); emit({ type: "model", model: id }); }
   },
   async models() {
-    const runtime = await ModelRuntime.create({ allowModelNetwork: false });
-    emit({ type: "models", models: (await runtime.getAvailable()).map((entry) => `${entry.provider}/${entry.id}`) });
+    emit({ type: "models", models: session?.modelRuntime.getModels(providerId).map((entry) => entry.id) ?? [] });
   },
   async status() { emit({ type: "status_snapshot", text: lastText }); },
   async dispose() {

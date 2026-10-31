@@ -16,8 +16,21 @@ fn main() {
             gpui_kit_material::init(cx);
             let scheme = adash_app::palette::light_scheme();
             theme::init_component_theme(scheme, 1.0, cx);
-            let mut options =
-                title_bar_window_options("adash", px(32.), size(px(1440.), px(900.)), cx);
+            let viewport = size(px(1440.), px(900.));
+            #[cfg(feature = "ui-test-hooks")]
+            let viewport = size(
+                px(std::env::var("ADASH_START_WIDTH")
+                    .ok()
+                    .and_then(|value| value.parse::<f32>().ok())
+                    .unwrap_or(f32::from(viewport.width))
+                    .clamp(640., 4096.)),
+                px(std::env::var("ADASH_START_HEIGHT")
+                    .ok()
+                    .and_then(|value| value.parse::<f32>().ok())
+                    .unwrap_or(f32::from(viewport.height))
+                    .clamp(480., 4096.)),
+            );
+            let mut options = title_bar_window_options("adash", px(32.), viewport, cx);
             // Lets the compositor match the window to adash.desktop for its icon.
             options.app_id = Some("adash".into());
             gpui_kit::open_window(options, cx, |window, cx| {

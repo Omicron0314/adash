@@ -38,6 +38,7 @@ Rust workspace，GPUI 桌面应用，Material 3 Expressive 组件来自
 | `crates/ucloud-api` | Rust | **唯一的** UCloud OpenAPI 客户端：签名、传输、类型化响应、Mock 后端 |
 | `crates/adash-core` | Rust | 领域层：统一资源模型、项目、流程（Flow）、预算/花费、计划(Plan)、执行器、本地状态 |
 | `crates/adash-tool` | Rust（bin） | 给 pi 扩展调用的 JSON CLI，代理**唯一的**执行面 |
+| `crates/adash-paths` | Rust | 按运行位置发现资源/工具，统一系统用户数据目录 |
 | `crates/agent-sdk` | Rust | 内置 pi SDK 宿主的 JSONL 边界（启动、命令、事件、确认） |
 | `agent/runtime` | TypeScript | 嵌入 `createAgentSession` 的 SDK 宿主；模型、会话、工具、确认 |
 | `crates/adash-ssh` | Rust | SSH/SFTP/PTY/监控/转发传输层，独立于 GUI |
@@ -45,7 +46,7 @@ Rust workspace，GPUI 桌面应用，Material 3 Expressive 组件来自
 | `agent/extensions/ucloud` | TypeScript | pi 扩展：注册 `ucloud_*` 工具，内部只调 `adash-tool` |
 | `agent/skills/*` | Markdown | 资源盘点、成本优化、流程图生成等领域知识（按需加载） |
 | `agent/prompts/system.md` | Markdown | 追加给 pi 的系统提示（角色、流程、禁区） |
-| `fixtures/mock` | JSON | Mock 账户数据，demo、测试与截图共用 |
+| `fixtures/mock` | JSON | Mock 账户源数据，编译进客户端；demo、测试与截图共用 |
 | `docs/` | Markdown | 架构、UI 规范、路线图、决策记录、人工测试清单 |
 | `docs/design/neko.html` | HTML | 视觉参考（只读，**不要修改、不要当作依赖**） |
 | `third_party/gpui-kit-material` | git submodule | M3 组件库（固定 commit，**不要在本仓库内修改它**） |
@@ -58,6 +59,8 @@ Rust workspace，GPUI 桌面应用，Material 3 Expressive 组件来自
   Rust 通过 `agent-sdk` 的 JSONL 边界与它通信，不启动、也不连接外部 `pi` CLI 或已有 pi 会话。
 - **SDK 使用显式工具白名单**：`noExtensions`/`noSkills`/`noContextFiles`/`noPromptTemplates` 关掉标准发现，只加载本仓库的
   `ucloud_*` 工具与 skill；没有 bash/edit/write。会话存在应用数据目录，凭证不进入模型上下文。
+- AI 服务必须来自应用设置中的用户输入；禁止自动继承个人 pi 凭据/默认模型。密钥写系统钥匙串，
+  不写 JSON、argv、环境变量或模型上下文；用户更改 Endpoint 时不能自动复用旧密钥。
 - **三个页面共享 `adash-core` 的类型**，不允许各页面自己解析 UCloud JSON。
 
 ## 3. 安全与花钱规则（硬性）
@@ -74,7 +77,7 @@ Rust workspace，GPUI 桌面应用，Material 3 Expressive 组件来自
 4. 凭证（PublicKey/PrivateKey/ProjectId）只放系统钥匙串（`keyring`）或环境变量
    `UCLOUD_PUBLIC_KEY` / `UCLOUD_PRIVATE_KEY` / `UCLOUD_PROJECT_ID`，由 `ucloud-api` 自己读取。
    工具输出、日志、会话文件、错误信息里**不得出现私钥**；改动触及输出路径时要补脱敏测试。
-5. 开发、测试、CI 默认 **Mock 模式**（`UDASH_MOCK=1`，读 `fixtures/mock`）。
+5. 开发、测试、CI 默认 **Mock 模式**（`UDASH_MOCK=1`，读编译内置的 `fixtures/mock`）。
    真实账户测试必须显式 `UDASH_LIVE=1` 且只允许 `read` 级接口；任何会产生费用的 live 测试禁止提交。
 6. 所有由本应用创建的资源都打标签/备注 `adash:<project-slug>`，这是「项目视角」和流程图的依据。
 
@@ -130,7 +133,7 @@ Linux 构建 GPUI 需要 `libxkbcommon wayland vulkan-icd-loader libx11 libxcb f
 - **每次修改完成后，必须执行 `python3 scripts/build-desktop.py`**：构建 `adash-app` 与 `adash-tool`，
   生成 `target/desktop/adash.desktop`（遵循实际 Cargo target 目录），并更新当前用户的
   `~/.local/share/applications/adash.desktop`（遵循 `XDG_DATA_HOME`）。用户需要直接从启动器打开最新版本。
-  入口默认 Mock，使用正常 pi 配置；不得把截图用的离线/开场提问环境写进日常启动入口。
+  入口默认 Mock；AI 使用用户在应用设置中填写的服务与密钥。正常构建不包含截图启动钩子。
 - 小步原子提交，提交信息说明「改了什么 + 为什么」；一个提交只做一件事；在 `main` 上工作，不 force-push。
 - 合并前必须通过第 6 节的 fmt / clippy / test；UI 改动附截图到 `docs/screenshots/`。
 - 不确定 UCloud 接口字段时以官方文档 <https://docs.ucloud.cn/api> 为准，注释里写接口名与文档链接；

@@ -1,10 +1,5 @@
 // The GUI consumes a small projection of SDK events. In particular, do not
 // serialize full messages on every token or forward provider metadata/secrets.
-export function parseModelChoice(choice: string): { provider: string; id: string } {
-  const separator = choice.indexOf("/");
-  return separator < 0 ? { provider: "", id: choice }
-    : { provider: choice.slice(0, separator), id: choice.slice(separator + 1) };
-}
 const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" ? value as Record<string, unknown> : {};
 
 export function projectEvent(value: unknown): Record<string, unknown> | undefined {

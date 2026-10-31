@@ -1,8 +1,9 @@
 # 实际运行截图
 
 以下图片来自 Rust/GPUI 应用在 niri/Wayland 上的实际窗口。
-使用 `UDASH_MOCK=1 ADASH_OFFLINE=1`，应用状态置于独立临时 `XDG_DATA_HOME`。
-没有执行云资源变更。裁去 compositor 阴影后按逻辑像素保存，未重绘界面。
+使用 `UDASH_MOCK=1`，应用状态置于独立临时 `ADASH_DATA_DIR`。
+没有执行云资源变更；AI 设置截图不包含凭据，也不会调用模型。
+按窗口实际内容裁切后保存，未重绘界面。
 
 | 页面 | 截图 | 窗口 |
 | --- | --- | --- |
@@ -19,29 +20,30 @@
 | 身份 | [identities.png](identities.png) | 1440×900 |
 | 片段 | [snippets.png](snippets.png) | 1440×900 |
 | 端口转发 | [port-forward.png](port-forward.png) | 1440×900 |
-| 设置 · 通用 / 终端 / 连接 / 关于 | [settings-0.png](settings-0.png) … [settings-3.png](settings-3.png) | 1440×900 |
-| 设置 · 关于（真实 SDK 状态） | [settings-3.png](settings-3.png) | 1440×900 |
+| 设置 · 通用 / 终端 / 连接 | [settings-0.png](settings-0.png) · [settings-1.png](settings-1.png) · [settings-2.png](settings-2.png) | 1440×900 |
+| 设置 · AI 服务配置 | [settings-ai.png](settings-ai.png) | 1440×900 |
 | 实际 SSH 终端 / SFTP / 监控 | [ssh-terminal.png](ssh-terminal.png) · [ssh-files.png](ssh-files.png) · [ssh-monitor.png](ssh-monitor.png) | 1440×900 |
 | 首次连接与完整指纹 | [ssh-first-connection.png](ssh-first-connection.png) | 1440×900 |
 | 远程目录确认（M3 模态框） | [ssh-dialog.png](ssh-dialog.png) | 1440×900 |
-| SDK 模型启动失败后的本地应答 | [agent-fallback.png](agent-fallback.png) | 1440×900 |
+| AI 未配置时的本地应答 | [agent-fallback.png](agent-fallback.png) | 1440×900 |
 
-复现（需要已构建应用、niri 与 ImageMagick）：
+复现（脚本自行构建测试版；niri 与 ImageMagick 为可选适配器）：
 
 ```sh
-cargo build -p adash-app
 python3 scripts/capture-ui.py home docs/screenshots/overview.png
 python3 scripts/capture-ui.py resources docs/screenshots/resources.png
 python3 scripts/capture-ui.py flows docs/screenshots/flows.png
 python3 scripts/capture-ui.py home docs/screenshots/overview-1280.png \
   --width 1280 --height 800 --ask '有浪费的钱吗？'
-ADASH_START_SETTINGS=1 python3 scripts/capture-ui.py settings docs/screenshots/settings-1.png
-ADASH_START_SETTINGS=3 python3 scripts/capture-ui.py settings docs/screenshots/settings-3.png --online
-ADASH_DEMO_APPEARANCE=dark python3 scripts/capture-ui.py home docs/screenshots/overview-dark.png
+python3 scripts/capture-ui.py settings docs/screenshots/settings-1.png --settings terminal
+python3 scripts/capture-ui.py settings docs/screenshots/settings-ai.png --settings ai --online
+python3 scripts/capture-ui.py home docs/screenshots/overview-dark.png --appearance dark
 ```
 
-默认使用本地应答（`ADASH_OFFLINE=1`）；`--online` 启动嵌入的 pi SDK，并清除继承的离线标记。
-SDK 失败截图使用不存在的模型 ID，不调用付费模型。
+脚本显式构建 `ui-test-hooks` 测试版本并读取实际 Cargo 产物路径。默认走本地应答；
+`--online` 走 SDK 启动路径但仍使用隔离的空 AI 配置。只有显式 `--use-ai-config` 才会复制用户的
+Endpoint/模型配置（不含密钥），配合 `--ask` 才会发起模型请求。
+其他桌面可用 `--capture-command` 提供带 `{pid}`、`{output}` 的截图命令；niri 是可选适配器。
 
 真实 SSH 截图使用临时密钥、临时目录与仅监听回环的 sshd：
 
@@ -51,8 +53,7 @@ python3 scripts/ssh-smoke.py --tab files --capture docs/screenshots/ssh-files.pn
 python3 scripts/ssh-smoke.py --tab monitor --capture docs/screenshots/ssh-monitor.png
 python3 scripts/ssh-smoke.py --untrusted --capture docs/screenshots/ssh-first-connection.png
 python3 scripts/ssh-smoke.py --dialog --capture docs/screenshots/ssh-dialog.png
-ADASH_MODEL=missing-provider/nested/model python3 scripts/capture-ui.py home \
-  docs/screenshots/agent-fallback.png --online --ask '我有哪些资源？'
+python3 scripts/capture-ui.py home docs/screenshots/agent-fallback.png --ask '我有哪些资源？'
 ```
 
 终端工作目录与 history 文件均在临时目录内；截图后清理自己启动的 app 与 sshd。

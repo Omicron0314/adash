@@ -46,12 +46,12 @@ pub struct HostConfig {
     pub program: String,
     /// Path to the built host (`agent/runtime/dist/index.js`).
     pub script: PathBuf,
-    /// Repository root, so the host can find the extension, skills and tools.
+    /// Application resource directory (extension, skills and prompts).
     pub root: PathBuf,
     /// Path to `adash-tool`; the extension shells out to it.
     pub tool: PathBuf,
-    /// Optional model override, `provider/id`.
-    pub model: Option<String>,
+    /// Keep the tool's cloud backend consistent with the GUI.
+    pub mock: bool,
     /// Session directory. `None` lets the SDK choose inside the agent data dir.
     pub session_dir: Option<PathBuf>,
 }
@@ -63,23 +63,25 @@ impl HostConfig {
         vec![self.script.display().to_string()]
     }
 
-    /// Environment handed to the SDK host. Never contains credentials.
+    /// Explicit launch entries. Provider keys travel only on private stdin.
     #[must_use]
     pub fn env(&self) -> Vec<(String, String)> {
-        let mut env = vec![
+        vec![
             ("ADASH_ROOT".to_owned(), self.root.display().to_string()),
             ("ADASH_TOOL".to_owned(), self.tool.display().to_string()),
-        ];
-        if let Some(model) = &self.model {
-            env.push(("ADASH_MODEL".to_owned(), model.clone()));
-        }
-        env
+            (
+                "UDASH_MOCK".to_owned(),
+                if self.mock { "1" } else { "0" }.to_owned(),
+            ),
+        ]
     }
 }
 
 /// What the SDK host said.
 #[derive(Debug, Clone)]
 pub enum AgentEvent {
+    /// The transport closed, including a host that failed before JSON startup.
+    Closed,
     /// Startup completed, with provider/model/tool list.
     Ready(Value),
     /// Startup failed; the app falls back to local answers.
@@ -127,6 +129,15 @@ impl std::fmt::Debug for AgentHost {
 impl AgentHost {
     /// Spawn the host. `start` is sent immediately with the session directory.
     pub fn spawn(config: HostConfig) -> std::io::Result<Self> {
+        Self::spawn_with_provider(config, None)
+    }
+
+    /// Provider credentials travel only on the child's private stdin; they
+    /// are never retained in HostConfig, Debug output, arguments or env.
+    pub fn spawn_with_provider(
+        config: HostConfig,
+        provider: Option<Value>,
+    ) -> std::io::Result<Self> {
         let mut command = Command::new(&config.program);
         command
             .args(config.argv())
@@ -162,8 +173,8 @@ impl AgentHost {
         if let Some(dir) = &host.config.session_dir {
             start["session_dir"] = json!(dir.display().to_string());
         }
-        if let Some(model) = &host.config.model {
-            start["model"] = json!(model);
+        if let Some(provider) = provider {
+            start["provider"] = provider;
         }
         host.send(&start)?;
         Ok(host)
@@ -256,9 +267,10 @@ fn spawn_reader(stdout: std::process::ChildStdout, sender: Sender<AgentEvent>) {
                     Err(_) => continue, // host diagnostics are not protocol
                 };
                 if sender.send(AgentEvent::classify(value)).is_err() {
-                    break;
+                    return;
                 }
             }
+            let _ = sender.send(AgentEvent::Closed);
         })
         .ok();
 }
@@ -308,8 +320,8 @@ mod tests {
             program: "node".to_owned(),
             script: PathBuf::from("/repo/agent/runtime/dist/index.js"),
             root: PathBuf::from("/repo"),
+            mock: true,
             tool: PathBuf::from("/repo/target/debug/adash-tool"),
-            model: Some("magpie/auto".to_owned()),
             session_dir: None,
         };
         assert_eq!(config.argv(), vec!["/repo/agent/runtime/dist/index.js"]);
@@ -317,6 +329,31 @@ mod tests {
         assert!(!config.argv().iter().any(|arg| arg == "--mode"));
     }
 
+    #[test]
+    #[cfg(unix)]
+    fn a_host_that_exits_before_ready_reports_closed() {
+        let root = std::env::temp_dir().join(format!("adash-host-exit-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let script = root.join("exit.sh");
+        std::fs::write(&script, "read -r line\nexit 0\n").unwrap();
+        let host = AgentHost::spawn(HostConfig {
+            program: "sh".into(),
+            script,
+            root: root.clone(),
+            tool: PathBuf::from("unused"),
+            mock: true,
+            session_dir: None,
+        })
+        .unwrap();
+        assert!(matches!(
+            host.events
+                .recv_timeout(std::time::Duration::from_secs(3))
+                .unwrap(),
+            AgentEvent::Closed
+        ));
+        drop(host);
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn classifies_records_by_type() {
         assert!(matches!(

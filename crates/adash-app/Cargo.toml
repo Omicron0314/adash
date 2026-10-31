@@ -6,7 +6,15 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+ui-test-hooks = []
+
 [dependencies]
+adash-paths.workspace = true
+serde = { workspace = true, features = ["derive"] }
+keyring = { version = "3.6", features = ["sync-secret-service", "crypto-rust"] }
+zeroize = "1"
+url = "2"
 adash-core.workspace = true
 ucloud-api.workspace = true
 agent-sdk.workspace = true
@@ -18,4 +26,5 @@ serde_json = "1"
 dirs = "6"
 
 [dev-dependencies]
+tempfile = "3"
 gpui-kit = { workspace = true, features = ["test-support"] }

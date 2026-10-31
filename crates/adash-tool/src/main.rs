@@ -446,18 +446,17 @@ fn doctor() -> Result<Value, Error> {
     let mock = ucloud_api::transport::mock_enabled();
     let credentials = std::env::var("UCLOUD_PUBLIC_KEY").is_ok();
     let store_path = Store::default_path();
-    let pi = std::process::Command::new("pi")
-        .arg("--version")
-        .output()
-        .ok()
-        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned());
+    let resources = adash_paths::resource_dir();
     Ok(json!({
         "mode": if mock { "mock" } else { "live" },
         "credentials_present": credentials,
         "state_path": store_path.display().to_string(),
         "state_exists": store_path.exists(),
-        "mock_dir": ucloud_api::transport::mock_dir().display().to_string(),
-        "pi": pi,
+        "mock_dir": ucloud_api::transport::mock_dir().map(|path| path.display().to_string()),
+        "mock_builtin": ucloud_api::transport::mock_dir().is_none(),
+        "sdk_host_present": resources.as_ref().is_some_and(|path| path.join("agent/runtime/dist/index.js").is_file()),
+        "resource_dir": resources.map(|path| path.display().to_string()),
+        "node_available": adash_paths::find_on_path("node").is_some(),
     }))
 }
 

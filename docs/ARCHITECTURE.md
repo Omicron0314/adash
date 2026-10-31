@@ -40,10 +40,10 @@
 | `paths` | 接口名常量 + 文档链接（`https://docs.ucloud.cn/api/...`） |
 | `models` | 各产品响应的 `serde` 类型，字段名保持 UCloud 原样（PascalCase，用 `rename`） |
 | `credentials` | 环境变量读取，私钥不进日志（`Debug` 手写脱敏）；UCloud 钥匙串读取待实现 |
-| `mock` | `UDASH_MOCK=1` 时从 `fixtures/mock` 读响应，行为与真实接口一致 |
+| `mock` | `UDASH_MOCK=1` 时读编译内置的样例；`UDASH_MOCK_DIR` 可覆盖，行为与真实接口一致 |
 | `client` | 对外门面：`inventory()`、`billing()`、`price()`、`regions()`… |
 
-规则：新增接口 → 先补 `fixtures/mock` 的真实结构样例 → 加 `paths` 常量与模型 → 加 client 方法 →
+规则：新增接口 → 先补 `fixtures/mock` 的真实结构样例并加入内置表 → 加 `paths` 常量与模型 → 加 client 方法 →
 写测试（签名向量 + 解析 + 脱敏）。
 
 ### adash-core
@@ -84,11 +84,22 @@
 `ucloud_*` 扩展、skills 与追加系统提示；工具白名单固定为 10 个 `ucloud_*`，没有 shell/edit/write。
 宿主接收 `start` / `prompt` / `abort` / `set_model` / `ui_response` / `dispose`，输出 GUI 所需的 SDK 事件投影。
 文本更新仅传本次 delta，避免反复传送完整消息与 provider 元数据；模型错误显式进入错误事件。
-模型 ID 按首个斜线分割 provider，保留 ID 内部的路径。
+模型服务由用户在「设置 → AI」填写：Endpoint、API 协议、模型 ID 与 token 限制存入应用 `ai.json`，
+API key 存在系统钥匙串，JSON 仅保存引用。保存失败保留原配置，更换 Endpoint 必须提供新密钥。
+SDK 使用内存凭据和 `modelsPath: null`，注册用户指定的服务与模型；不读取个人 pi 模型/认证配置。
+密钥经私有 stdin 交给宿主，不写入 argv/env/模型元数据；服务错误回显的密钥在事件和会话持久化前脱敏。
 扩展的 `ctx.ui.confirm` 以 `ui_request` 转发到 GUI，用户在计划卡片确认后回传 `ui_response`；
 GUI 写入一次性批准，`adash-tool apply` 再校验计划哈希、过期与批准，执行仍在 Rust。
 
 `crates/agent-sdk` 只负责进程生命周期、LF 分帧与事件分类；模型、会话、工具与流式输出都属于 SDK。
+
+### adash-paths 与程序目录
+
+`adash-paths` 统一用户数据目录、资源目录和辅助工具发现。按当前可执行文件的位置支持自包含目录和
+`bin` / `share/adash` 布局；开发构建按实际运行位置寻找 checkout。没有编译机器的源码绝对路径。
+`adash-tool` 从应用同目录或 PATH 查找，显式环境覆盖可用于自定义安装。
+构建脚本将程序、工具、SDK/扩展及 Node 依赖复制到可移动目录；启动脚本按自身位置执行程序。
+Mock JSON 编译进客户端，独立运行无需开发目录。截图启动钩子仅在 `ui-test-hooks` 功能下编译。
 
 ### adash-ssh
 
@@ -111,6 +122,7 @@ GUI 只通过请求/应答通道交互，已关闭会话保留索引槽位，异
 | `views/flows` | 流程图：节点画布、连线、执行回放、节点详情 |
 | `widgets` | kit 缺的薄组合件（概览卡片、资源行、流程节点、连线层） |
 | `agent` | SDK host 生命周期、消息流、计划确认；host 不可用时退化为本地应答 |
+| `ai` | 用户 AI 配置校验、钥匙串与配置事务保存、表单状态 |
 | `ssh` | 主机/身份/片段/转发状态、连接与终端生命周期、批处理 |
 | `palette` | neko 浅色/深色语义色板，供主题切换使用 |
 | `views_sessions` | 主机、身份、片段、端口转发与会话终端/监控 |

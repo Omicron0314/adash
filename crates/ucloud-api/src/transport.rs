@@ -24,7 +24,7 @@ pub enum Backend {
     /// Fixtures from `fixtures/mock`; no network, no money.
     Mock {
         /// Directory holding `<Action>.json` files.
-        dir: PathBuf,
+        dir: Option<PathBuf>,
     },
 }
 
@@ -64,7 +64,7 @@ impl Backend {
         })
     }
 
-    /// Build the fixture backend from `UDASH_MOCK_DIR` (or the in-repo default).
+    /// Build the fixture backend from an explicit directory or embedded fixtures.
     pub fn mock() -> Self {
         Self::Mock { dir: mock_dir() }
     }
@@ -77,7 +77,7 @@ impl Backend {
     /// Perform one action. `params` are *business* parameters only.
     pub fn call(&self, action: &str, params: &[(String, String)]) -> Result<serde_json::Value> {
         match self {
-            Self::Mock { dir } => mock_response(dir, action),
+            Self::Mock { dir } => mock_response(dir.as_deref(), action),
             Self::Live {
                 endpoint,
                 http,
@@ -98,27 +98,35 @@ pub fn mock_enabled() -> bool {
     }
 }
 
-/// Fixture directory: `UDASH_MOCK_DIR`, else `<repo>/fixtures/mock`, else the
-/// per-user data dir.
-pub fn mock_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("UDASH_MOCK_DIR") {
-        return PathBuf::from(dir);
-    }
-    let in_repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/mock")
-        .canonicalize();
-    if let Ok(dir) = in_repo {
-        return dir;
-    }
-    dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("adash/fixtures")
+/// An explicit fixture override; ordinary installations use embedded fixtures.
+pub fn mock_dir() -> Option<PathBuf> {
+    std::env::var_os("UDASH_MOCK_DIR").map(PathBuf::from)
 }
 
-fn mock_response(dir: &std::path::Path, action: &str) -> Result<serde_json::Value> {
-    let path = dir.join(format!("{action}.json"));
-    let text = std::fs::read_to_string(&path)
-        .map_err(|error| Error::Mock(format!("{}: {error}", path.display())))?;
+fn mock_response(dir: Option<&std::path::Path>, action: &str) -> Result<serde_json::Value> {
+    let text = if let Some(dir) = dir {
+        let path = dir.join(format!("{action}.json"));
+        std::fs::read_to_string(&path)
+            .map_err(|error| Error::Mock(format!("{}: {error}", path.display())))?
+    } else {
+        match action {
+            "DescribeUHostInstance" => {
+                include_str!("../../../fixtures/mock/DescribeUHostInstance.json")
+            }
+            "DescribeEIP" => include_str!("../../../fixtures/mock/DescribeEIP.json"),
+            "DescribeUDisk" => include_str!("../../../fixtures/mock/DescribeUDisk.json"),
+            "DescribeUDBInstance" => {
+                include_str!("../../../fixtures/mock/DescribeUDBInstance.json")
+            }
+            "DescribeUMem" => include_str!("../../../fixtures/mock/DescribeUMem.json"),
+            "DescribeULB" => include_str!("../../../fixtures/mock/DescribeULB.json"),
+            "GetBalance" => include_str!("../../../fixtures/mock/GetBalance.json"),
+            "ListBills" => include_str!("../../../fixtures/mock/ListBills.json"),
+            "GetRegion" => include_str!("../../../fixtures/mock/GetRegion.json"),
+            _ => return Err(Error::Mock(format!("没有内置样例接口 {action}"))),
+        }
+        .to_owned()
+    };
     let value: serde_json::Value =
         serde_json::from_str(&text).map_err(|error| Error::Decode(error.to_string()))?;
     check_ret_code(&value)?;

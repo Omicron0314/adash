@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { parseModelChoice, projectEvent } from '../dist/protocol.js';
+import { projectEvent } from '../dist/protocol.js';
+import { configuredRuntime } from '../dist/provider.js';
 
-test('provider selection preserves nested model IDs', () => {
-  assert.deepEqual(parseModelChoice('magpie/auto/deepseek-v4.1-flash'), {provider:'magpie',id:'auto/deepseek-v4.1-flash'});
-  assert.deepEqual(parseModelChoice('standalone'), {provider:'',id:'standalone'});
+test('user configuration is mandatory and credentials cannot hide in endpoint URLs', async () => {
+  await assert.rejects(configuredRuntime(undefined, '.'), /设置.*AI/);
+  await assert.rejects(configuredRuntime({endpoint:'https://key@example.org',model:'custom/model',api_key:'test'}, '.'), /Endpoint/);
+  await assert.rejects(configuredRuntime({endpoint:'https://example.org?key=secret',model:'custom/model',api_key:'test'}, '.'), /Endpoint/);
 });
 test('stream only the delta and supported metadata to the GUI', () => {
   const event = {type:'message_update', assistantMessageEvent:{type:'text_delta',delta:'中文'},message:{privateProviderData:'secret',content:'repeated full message'}};

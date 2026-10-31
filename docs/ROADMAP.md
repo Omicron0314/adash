@@ -5,7 +5,7 @@
 
 ## M0 仓库与工程骨架
 
-- [x] workspace + 五个 crate + 固定工具链（`rust-toolchain.toml` = gpui-kit-material）
+- [x] workspace + 六个 crate + 固定工具链（`rust-toolchain.toml` = gpui-kit-material）
 - [x] `third_party/gpui-kit-material` submodule 固定在 `45de656`
 - [x] `[patch]` 与 submodule 一致（GPUI / Base / Fast + Kit）
 - [x] 应用骨架：标题栏 + 左侧导航 + 三个页面占位
@@ -109,10 +109,12 @@ catussh 的终端 / 文件 / 监控 / 身份 / 片段 / 端口转发全部保留
 - [x] 文件/会话/指纹确认使用组件库 M3 模态框：Escape 关闭、焦点限制在弹窗内、关闭后返回原焦点；
       证据：`docs/screenshots/ssh-dialog.png`。
 - [x] 最终验收：`cargo fmt --all --check`、Clippy（workspace/all-targets/-D warnings）、
-      `cargo test --workspace`（65 项）、`ADASH_SSH_INTEGRATION=1 cargo test -p adash-ssh --test localhost`（1 项）、SDK 测试（13 项）、
+      `cargo test --workspace`、`ADASH_SSH_INTEGRATION=1 cargo test -p adash-ssh --test localhost`、SDK 测试（14 项）、
       原生窗口截图（主页、资源、流程、主机、身份、片段、转发、设置、真实 SSH 终端/文件/监控/指纹/模态框）。
 - [x] SDK 内置代理（`agent/runtime` + `agent-sdk`），GUI 不再连接外部 pi CLI；10 个云工具白名单。
-- [x] catussh 设置移植（通用/终端/连接/关于），浅色/深色主题、终端字体与字号、超时、监控间隔、指纹清除。
+- [x] catussh 设置移植（通用/终端/连接/AI），浅色/深色主题、终端字体与字号、超时、监控间隔、指纹清除。
+- [x] 移除“关于”；AI 服务使用用户填写的 Endpoint / API key / 模型 / 协议，凭据只存钥匙串，SDK 不读取个人 pi 配置。
+- [x] 通用资源定位与可移动程序目录；内置 Mock、同目录/PATH 工具发现、测试启动钩子与正常构建隔离。
 - [x] 应用 SVG 图标、桌面入口与 hicolor 安装；每次构建更新启动器。
 - [x] 主页单层 M3 圆角输入框（无左侧图标、无提示文字、Enter 发送），所有表单输入统一圆角。
 
@@ -123,7 +125,7 @@ catussh 的终端 / 文件 / 监控 / 身份 / 片段 / 端口转发全部保留
 - [ ] 冷启动 < 2s、首屏骨架屏、代理连接失败有可读错误
 - [x] 开发用 `.desktop` 入口、图标与构建安装脚本；已通过 `gtk-launch adash` 验证。
       每次修改后运行 `python3 scripts/build-desktop.py` 更新启动器。
-- [ ] 独立分发包（AppImage）；当前启动器引用本地 checkout 的构建产物。
+- [ ] 独立分发包（AppImage）；当前已生成可移动程序目录，运行需 Node.js 与系统图形依赖。
 
 ## 之后（不在 demo 范围）
 

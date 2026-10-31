@@ -13,7 +13,6 @@ thiserror.workspace = true
 sha1 = "0.10"
 base64 = "0.22"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "json"] }
-dirs = "6"
 
 [dev-dependencies]
 serde_json.workspace = true

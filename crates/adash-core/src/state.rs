@@ -110,12 +110,7 @@ pub struct Store {
 impl Store {
     /// `<data dir>/adash/state.json`.
     pub fn default_path() -> PathBuf {
-        if let Ok(dir) = std::env::var("ADASH_DATA_DIR") {
-            return PathBuf::from(dir).join("state.json");
-        }
-        dirs::data_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("adash/state.json")
+        adash_paths::data_dir().join("state.json")
     }
 
     /// Open the default store, or an empty one when the file is missing.

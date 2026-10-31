@@ -175,8 +175,12 @@ pub struct Adash {
     pub run_command: Entity<InputState>,
     /// Keeps the SSH reply drain alive.
     pub ssh_timer: Option<Task<()>>,
-    /// 0 通用 / 1 终端 / 2 连接 / 3 关于.
+    /// 0 通用 / 1 终端 / 2 连接 / 3 AI.
     pub settings_category: usize,
+    pub ai_settings: crate::ai::AiSettings,
+    pub ai_form: crate::ai::AiForm,
+    pub ai_error: Option<String>,
+    pub ai_saving: bool,
     /// Last focused SSH session; retained when opening snippets or forwards.
     pub active_session: Option<usize>,
     pub selected_hosts: BTreeSet<String>,
@@ -232,6 +236,11 @@ impl Adash {
                 Some(format!("{error:#}")),
             ),
         };
+        let (ai_settings, ai_error) = match crate::ai::AiSettings::load() {
+            Ok(settings) => (settings, None),
+            Err(error) => (crate::ai::AiSettings::default(), Some(error)),
+        };
+        let ai_form = crate::ai::AiForm::new(&ai_settings, window, cx);
         let host_form = HostForm::new(window, cx);
         let identity_form = IdentityForm::new(window, cx);
         let snippet_form = SnippetForm::new(window, cx);
@@ -248,7 +257,7 @@ impl Adash {
             findings: Vec::new(),
             store,
             messages: vec![ChatMessage::agent(welcome(mode), true)],
-            agent: Agent::connect(),
+            agent: Agent::connect(mode),
             input,
             search,
             filters: Filters::default(),
@@ -270,6 +279,10 @@ impl Adash {
             run_command,
             ssh_timer: None,
             settings_category: 0,
+            ai_settings,
+            ai_form,
+            ai_error,
+            ai_saving: false,
             active_session: None,
             selected_hosts: BTreeSet::new(),
             pending_close: None,
@@ -324,9 +337,18 @@ impl Adash {
                             cx,
                         );
                         if !this.agent.streaming {
-                            let previous = this.agent.model.clone();
+                            let previous = (
+                                this.agent.model.clone(),
+                                this.agent.status.clone(),
+                                this.agent.offline_reason().map(ToOwned::to_owned),
+                            );
                             this.agent.pump(|_| {}, |_| {});
-                            if previous != this.agent.model {
+                            let current = (
+                                this.agent.model.clone(),
+                                this.agent.status.clone(),
+                                this.agent.offline_reason().map(ToOwned::to_owned),
+                            );
+                            if previous != current {
                                 cx.notify();
                             }
                         }
@@ -345,6 +367,7 @@ impl Adash {
         );
         app.refresh();
         app.flow_project = app.default_flow_project();
+        #[cfg(feature = "ui-test-hooks")]
         app.apply_startup_env(window, cx);
         let view = cx.entity().downgrade();
         window.on_window_should_close(cx, move |_, cx| {
@@ -403,6 +426,7 @@ impl Adash {
     /// `ADASH_START_PAGE=resources|flows|settings` plus
     /// `ADASH_START_SELECTED=<kind:id>` and `ADASH_START_FLOW=<slug>`.
     /// It only chooses where the window opens; it never changes capabilities.
+    #[cfg(feature = "ui-test-hooks")]
     fn apply_startup_env(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Ok(key) = std::env::var("ADASH_START_SELECTED")
             && let Some((kind, id)) = key.split_once(':')
@@ -938,7 +962,7 @@ fn welcome(mode: Mode) -> String {
         "可以问我：这个项目用了哪些服务？账户里有什么浪费？这个月花了多少钱？".to_owned(),
     ];
     match mode {
-        Mode::Mock => lines.push("现在是 Mock 模式：数据来自 fixtures，不会花钱。".to_owned()),
+        Mode::Mock => lines.push("现在是 Mock 模式：数据来自内置样例，不会花钱。".to_owned()),
         Mode::Live => lines.push("当前连接真实账户：任何变更都需要你在计划卡片里确认。".to_owned()),
     }
     lines.join("\n")
