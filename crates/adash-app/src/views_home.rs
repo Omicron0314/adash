@@ -7,6 +7,7 @@ use crate::widgets;
 use adash_core::resource::{ResourceKind, money};
 use gpui::prelude::*;
 use gpui::*;
+use gpui_kit::component::text::{TextView, TextViewStyle};
 use gpui_kit_material::prelude::*;
 
 impl Adash {
@@ -77,15 +78,42 @@ impl Adash {
                     )
                     .into_any_element(),
                 Role::Agent => {
-                    let mut body = div().flex().flex_col().gap(rem(6.)).max_w(rem(560.)).child(
-                        div()
+                    let mut body = div()
+                        .flex()
+                        .flex_col()
+                        .gap(rem(6.))
+                        .w_full()
+                        .min_w_0()
+                        .max_w(rem(560.))
+                        .child(
+                            // Keep the id stable so streamed deltas update the same
+                            // parsed document and preserve its selection state.
+                            TextView::markdown(
+                                ("agent-message", index),
+                                if message.text.is_empty() {
+                                    "…".to_owned()
+                                } else {
+                                    message.text.clone()
+                                },
+                            )
+                            .w_full()
+                            .min_w_0()
                             .text_size(TEXT_BODY)
-                            .child(if message.text.is_empty() {
-                                "…".to_owned()
-                            } else {
-                                message.text.clone()
-                            }),
-                    );
+                            .selectable(true)
+                            .style(
+                                TextViewStyle::default()
+                                    .table_head(
+                                        StyleRefinement::default()
+                                            .bg(color(ColorRole::SURFACE_CONTAINER_HIGH))
+                                            .text_color(color(ColorRole::ON_SURFACE)),
+                                    )
+                                    .table({
+                                        let mut table = StyleRefinement::default();
+                                        table.overflow.x = Some(Overflow::Scroll);
+                                        table
+                                    }),
+                            ),
+                        );
                     if message.offline {
                         body = body.child(
                             div()
@@ -110,11 +138,12 @@ impl Adash {
                         .flex()
                         .flex_col()
                         .items_start()
+                        .w_full()
+                        .min_w_0()
                         .child(body)
                         .into_any_element()
                 }
             });
-            let _ = index;
         }
 
         if let Some(plan) = self.pending_plan().cloned() {

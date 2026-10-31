@@ -8,6 +8,8 @@
 | --- | --- | --- |
 | 对话与账户概览 | [overview.png](overview.png) | 1440×900 |
 | 深色主题 | [overview-dark.png](overview-dark.png) | 1440×900 |
+| Markdown 助手回复 | [chat-markdown.png](chat-markdown.png) | 1440×900 |
+| Markdown 深色主题 / 宽表格 | [chat-markdown-dark-1280.png](chat-markdown-dark-1280.png) · [chat-markdown-wide-1280.png](chat-markdown-wide-1280.png) | 1280×800 |
 | 资源卡片与详情 | [resources.png](resources.png) | 1440×900 |
 | 服务图与检查器 | [flows.png](flows.png) | 1440×900 |
 | 省钱计划（较窄窗口） | [overview-1280.png](overview-1280.png) | 1280×800 |
@@ -56,6 +58,10 @@ ADASH_MODEL=missing-provider/nested/model python3 scripts/capture-ui.py home \
 
 脚本仅调整、关闭自己启动的窗口，并恢复先前焦点；不会覆盖用户的 HOME 或应用状态。
 即使调用者设置了 `ADASH_DATA_DIR`，截图也强制使用自己的临时数据目录。
+
+Markdown 对话截图使用临时预览入口，复用实际 `Adash` 对话视图，把固定示例正文按每 80ms、14 个字符追加。
+验证标题、强调、列表、链接、行内代码、代码块、表格和引用，以及深色表头的可读性与宽表格的内部裁切。
+示例消息仅用于排版验证；账户概览仍来自 Mock 数据，没有调用模型或云写接口。
 
 已逐张检查布局、圆角输入、卡片边距、资源价格换行与图中节点可见性。
 这些截图是视觉验收证据，不能替代完整的鼠标、键盘、滚动及真实账户交互测试。
